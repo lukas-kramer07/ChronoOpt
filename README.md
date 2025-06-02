@@ -93,6 +93,7 @@ Later:
 
 ## 🧪 Simulation Loop
 
+```text
 Past state (x days) → Model → Predicted sleep quality
      ↓
  Agent selects action → Environment applies change → Next state
@@ -100,6 +101,7 @@ Past state (x days) → Model → Predicted sleep quality
  Reward (simulated or self-reported) computed
      ↓
  Update agent
+```
 
 
 ## 🛤️ Roadmap

@@ -10,13 +10,13 @@ from src.features.utils import calculate_sleep_score_proxy
 
 def test_yesterday_sleep_score():
     """
-    Fetches yesterday's raw Garmin metrics, extracts sleep data,
+    Fetches todays's raw Garmin metrics, extracts sleep data,
     calculates the sleep score proxy, and prints the result.
     """
     print("--- Running Sleep Score Test for Yesterday ---")
 
     # Calculate yesterday's date
-    yesterday = datetime.now().date() - timedelta(days=1)
+    yesterday = datetime.now().date() - timedelta(3)
     yesterday_str = yesterday.strftime("%Y-%m-%d")
 
     print(f"Fetching data for: {yesterday_str}")

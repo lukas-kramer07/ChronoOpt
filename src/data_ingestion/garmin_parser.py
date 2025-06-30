@@ -91,9 +91,6 @@ def get_daily_metrics(date_str: str) -> dict:
         daily_data['dailySummaryData'] = daily_summary_data
         if daily_summary_data:
             daily_data['stepsData'] = {'totalSteps': daily_summary_data.get('steps', 0)}
-            # We can also get restingHeartRate from here if available
-            # For now, keeping heartRateData separate as it might contain more detail
-            # daily_data['heartRateData']['restingHeartRate'] = daily_summary_data.get('restingHeartRate', 0)
 
 
         # Sleep Data
@@ -163,7 +160,7 @@ def get_historical_metrics(num_days: int) -> list:
 if __name__ == "__main__":
     # Example usage: Fetch data for the last 3 days
     print("--- Running garmin_parser.py in standalone test mode ---")
-    num_days_to_fetch = 3
+    num_days_to_fetch = 2
     historical_metrics = get_historical_metrics(num_days_to_fetch)
 
     if historical_metrics:
@@ -176,74 +173,15 @@ if __name__ == "__main__":
             print(f"  Type of sleepData: {type(day_data['sleepData'])}")
             if isinstance(day_data['sleepData'], dict):
                 print(f"  Sleep Data Keys: {list(day_data['sleepData'].keys())}")
+                # Dive deeper into specific nested sleep data keys
+                daily_sleep_dto = day_data['sleepData'].get('dailySleepDTO', {})
+                if isinstance(daily_sleep_dto, dict):
+                    print(f"    dailySleepDTO Keys: {list(daily_sleep_dto.keys())}")
+                rem_sleep_data = day_data['sleepData'].get('remSleepData', {})
+                if isinstance(rem_sleep_data, dict):
+                    print(f"    remSleepData Keys: {list(rem_sleep_data.keys())}")
+                sleep_levels = day_data['sleepData'].get('sleepLevels', {})
+                if isinstance(sleep_levels, dict):
+                    print(f"    sleepLevels Keys: {list(sleep_levels.keys())}")
             else:
                 print(f"  Sleep Data: (Not a dictionary, cannot show keys directly)")
-
-            # Heart Rate Data
-            print(f"  Type of heartRateData: {type(day_data['heartRateData'])}")
-            if isinstance(day_data['heartRateData'], dict):
-                print(f"  Heart Rate Data Keys: {list(day_data['heartRateData'].keys())}")
-            else:
-                print(f"  Heart Rate Data: (Not a dictionary, cannot show keys directly)")
-
-            # Respiration Data
-            print(f"  Type of respirationData: {type(day_data['respirationData'])}")
-            if isinstance(day_data['respirationData'], dict):
-                print(f"  Respiration Data Keys: {list(day_data['respirationData'].keys())}")
-            else:
-                print(f"  Respiration Data: (Not a dictionary, cannot show keys directly)")
-
-            # Stress Data
-            print(f"  Type of stressData: {type(day_data['stressData'])}")
-            if isinstance(day_data['stressData'], dict):
-                print(f"  Stress Data Keys: {list(day_data['stressData'].keys())}")
-            else:
-                print(f"  Stress Data: (Not a dictionary, cannot show keys directly)")
-
-            # Steps Data
-            print(f"  Type of stepsData: {type(day_data['stepsData'])}")
-            if isinstance(day_data['stepsData'], dict):
-                print(f"  Steps Data Keys: {list(day_data['stepsData'].keys())}")
-            else:
-                print(f"  Steps Data: (Not a dictionary, cannot show keys directly)")
-
-            # Body Battery Data (often a list of dicts)
-            print(f"  Type of bodyBatteryData: {type(day_data['bodyBatteryData'])}")
-            if isinstance(day_data['bodyBatteryData'], list) and len(day_data['bodyBatteryData']) > 0 and isinstance(day_data['bodyBatteryData'][0], dict):
-                print(f"  Body Battery Data Keys (first item): {list(day_data['bodyBatteryData'][0].keys())}")
-            elif isinstance(day_data['bodyBatteryData'], dict): # In case it's a dict directly
-                 print(f"  Body Battery Data Keys: {list(day_data['bodyBatteryData'].keys())}")
-            else:
-                print(f"  Body Battery Data: (Not a dictionary or list of dictionaries, cannot show keys directly)")
-
-            # Activity Data (always a list of dicts)
-            print(f"  Type of activityData: {type(day_data['activityData'])}")
-            if isinstance(day_data['activityData'], list) and len(day_data['activityData']) > 0 and isinstance(day_data['activityData'][0], dict):
-                print(f"  Activity Data Keys (first item): {list(day_data['activityData'][0].keys())}")
-            else:
-                print(f"  Activity Data: (Empty list or not a list of dictionaries, cannot show keys directly)")
-
-            # Daily Summary Data
-            print(f"  Type of dailySummaryData: {type(day_data['dailySummaryData'])}")
-            if isinstance(day_data['dailySummaryData'], dict):
-                print(f"  Daily Summary Data Keys: {list(day_data['dailySummaryData'].keys())}")
-            else:
-                print(f"  Daily Summary Data: (Not a dictionary, cannot show keys directly)")
-
-            print(f"  ----------------------------------------")
-
-            # Simplified print for common metrics (will be N/A if raw data is empty)
-            print(f"  Sleep Time (seconds): {day_data['sleepData'].get('sleepTimeSeconds', 'N/A')}")
-            print(f"  Total Steps: {day_data['stepsData'].get('totalSteps', 'N/A')}")
-            print(f"  Avg Heart Rate: {day_data['heartRateData'].get('heartRate', {}).get('avg', 'N/A')}")
-            print(f"  Avg Respiration Rate: {day_data['respirationData'].get('respiration', {}).get('avg', 'N/A')}")
-            print(f"  Avg Stress: {day_data['stressData'].get('stress', {}).get('avg', 'N/A')}")
-            # Corrected access for bodyBatteryData, assuming it's a list of dicts
-            if isinstance(day_data['bodyBatteryData'], list) and len(day_data['bodyBatteryData']) > 0:
-                print(f"  Body Battery (Total): {day_data['bodyBatteryData'][0].get('total', 'N/A')}")
-            else:
-                print(f"  Body Battery (Total): N/A (No valid data or empty list)")
-
-            print(f"  Activities Count: {len(day_data['activityData'])}")
-    else:
-        print("\nFailed to fetch any historical data. Check credentials, .env, and internet connection.")

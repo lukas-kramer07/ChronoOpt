@@ -194,3 +194,7 @@ cython_debug/
 .cursorindexingignore
 
 data/*
+# Circadian Rhythm Optimizer specific additions
+/src/models/saved_models/
+/src/rl_agent/saved_policies/
+/config/config.yaml

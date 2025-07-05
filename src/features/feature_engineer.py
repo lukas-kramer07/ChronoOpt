@@ -1,83 +1,216 @@
-# src/features/utils.py
-# This module contains utility functions for feature engineering.
+# src/features/feature_engineer.py
+# This module is responsible for extracting and transforming raw Garmin metrics
+# into a standardized set of daily features, and then compiling these into
+# time-series state vectors for the prediction model.
 
-def calculate_sleep_score_proxy(sleep_data: dict) -> float:
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
+
+# Import the utility functions, including our sleep score proxy calculator
+from src.features.utils import calculate_sleep_score_proxy
+
+def extract_daily_features(raw_daily_metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calculates a simplified sleep score proxy (0-100) based on Garmin sleep data.
-    This is a heuristic and can be refined later to better match Garmin's proprietary score.
+    Extracts and standardizes key daily features from the raw Garmin metrics.
+    Handles missing data by returning default/N/A values.
 
     Args:
-        sleep_data (dict): A dictionary containing raw sleep metrics from Garmin.
+        raw_daily_metrics (Dict[str, Any]): A dictionary containing raw metrics for a single day,
+                                            as returned by garmin_parser.get_daily_metrics.
 
     Returns:
-        float: A calculated sleep score proxy between 0 and 100.
+        Dict[str, Any]: A standardized dictionary of daily features.
     """
-    if not sleep_data:
-        return 50.0 # Default/neutral score if no sleep data
+    features = {
+        'date': raw_daily_metrics.get('date'),
+        'totalSteps': 0,
+        'avgHeartRate': 0.0, # Will try to populate
+        'restingHeartRate': 0.0,
+        'avgRespirationRate': 0.0,
+        'avgStress': 0.0,
+        'bodyBatteryEndValue': 0.0, # Using 'endValue' or 'mostRecentValue' as the daily summary
+        'activityTypeFlags': { # One-hot encoded or similar for activity types
+            'Strength': 0,
+            'Cardio': 0,
+            'Yoga': 0,
+            'Stretching': 0,
+            'OtherActivity': 0, # Catch-all for recognized activities not explicitly flagged
+            'NoActivity': 1 # Default to NoActivity if no activities found
+        },
+        'sleepMetrics': {
+            'total_sleep_seconds': 0.0,
+            'deep_sleep_seconds' : 0.0,
+            'rem_sleep_seconds' : 0.0,
+            'awake_sleep_seconds': 0.0, #ironic, isn't it
+            'restless_moments_count': 0.0,
+            'avg_sleep_stress': 0.0,
+            'resting_heart_rate':0.0,
+        },
+        'wakeTimeGMT': 'N/A', # Will be timestamp string (GMT)
+        'bedTimeGMT': 'N/A',  # Will be timestamp string (GMT)
+    }
 
-    # Extract relevant fields, providing default values if keys are missing
-    # All primary sleep duration metrics are nested under 'dailySleepDTO'
-    daily_sleep_dto = sleep_data.get('dailySleepDTO', {})
-    total_sleep_seconds = daily_sleep_dto.get('sleepTimeSeconds', 0)
-    deep_sleep_seconds = daily_sleep_dto.get('deepSleepSeconds', 0)
-    rem_sleep_seconds = daily_sleep_dto.get('remSleepSeconds', 0) 
-    awake_sleep_seconds = daily_sleep_dto.get('awakeSleepSeconds', 0)
+    # --- Process Sleep Data ---
+    sleep_data = raw_daily_metrics.get('sleepData', {})
+    if sleep_data:
+        # Extract dailySleepDTO 
+        daily_sleep_dto = sleep_data.get('dailySleepDTO', {})
 
-    # Restless moments and resting heart rate are direct keys in sleep_data
-    restless_moments_count = sleep_data.get('restlessMomentsCount', 0)
-    resting_heart_rate = sleep_data.get('restingHeartRate', 0)
+        features['sleepMetrics']['total_sleep_seconds'] = daily_sleep_dto.get('sleepTimeSeconds', 0)
+        features['sleepMetrics']['deep_sleep_seconds']= daily_sleep_dto.get('deepSleepSeconds', 0)
+        features['sleepMetrics']['rem_sleep_seconds'] = daily_sleep_dto.get('remSleepSeconds', 0)
+        features['sleepMetrics']['awake_sleep_seconds'] = daily_sleep_dto.get('awakeSleepSeconds', 0)
 
-    score = 0.0
+        features['sleepMetrics']['restless_moments_count'] = sleep_data.get('restlessMomentsCount', 0)
+        features['sleepMetrics']['resting_heart_rate'] = sleep_data.get('restingHeartRate', 0) # From sleepData
+        features['sleepMetrics']['avg_sleep_stress'] = daily_sleep_dto.get('avgSleepStress', 0) # Average stress during sleep
+        
 
-    # 1. Total Sleep Duration (e.g., 7-9 hours is ideal, contributes up to 30 points)
-    total_sleep_hours = total_sleep_seconds / 3600
-    if 7.0 <= total_sleep_hours <= 9.0:
-        score += 30.0
-    elif 6.0 <= total_sleep_hours < 7.0 or 9.0 < total_sleep_hours <= 10.0:
-        score += 15.0
-    elif total_sleep_hours > 0: # Some sleep but outside ideal range
-        score += 5.0
+        features['bedTimeGMT'] = daily_sleep_dto.get('sleepStartTimestampGMT', 'N/A')
+        features['wakeTimeGMT'] = daily_sleep_dto.get('sleepEndTimestampGMT', 'N/A')
 
-    # 2. Deep and REM Sleep Ratio (aim for ~15-25% deep, ~20-25% REM of total sleep)
-    # These ratios are typically calculated against total *asleep* time
-    total_asleep_seconds = total_sleep_seconds - awake_sleep_seconds
-    if total_asleep_seconds > 0:
-        deep_ratio = deep_sleep_seconds / total_asleep_seconds
-        rem_ratio = rem_sleep_seconds / total_asleep_seconds
+    # --- Process Daily Summary Data (Primary Source for many aggregates) ---
+    daily_summary_data = raw_daily_metrics.get('dailySummaryData', {})
+    if daily_summary_data:
+        features['totalSteps'] = daily_summary_data.get('totalSteps', 0)
+        features['restingHeartRate'] = daily_summary_data.get('restingHeartRate', features['restingHeartRate']) # Prioritize daily summary for resting HR
+        features['avgStress'] = daily_summary_data.get('averageStressLevel', 0.0)
+        features['bodyBatteryEndValue'] = daily_summary_data.get('bodyBatteryMostRecentValue', 0.0)
+        features['avgRespirationRate'] = daily_summary_data.get('avgSleepRespirationValue', daily_summary_data.get('avgWakingRespirationValue', 0.0))
+        features['avgHeartRate'] = daily_summary_data.get('averageHeartRate', 0.0)
 
-        # Deep sleep contribution (up to 25 points)
-        if 0.15 <= deep_ratio <= 0.25:
-            score += 25.0
-        elif 0.10 <= deep_ratio < 0.15 or 0.25 < deep_ratio <= 0.30:
-            score += 10.0
 
-        # REM sleep contribution (up to 25 points)
-        if 0.20 <= rem_ratio <= 0.25:
-            score += 25.0
-        elif 0.15 <= rem_ratio < 0.20 or 0.25 < rem_ratio <= 0.30:
-            score += 10.0
+    # --- Process Heart Rate Data (Fallback/Detail for avg HR) ---
+    # Only try this if avgHeartRate wasn't found in daily summary
+    heart_rate_data = raw_daily_metrics.get('heartRateData', {})
+    if features['avgHeartRate'] == 0.0 and heart_rate_data and heart_rate_data.get('heartRate'):
+        features['avgHeartRate'] = heart_rate_data['heartRate'].get('avg', 0.0)
+
+    # --- Process Respiration Data (Fallback if not in daily summary) ---
+    if features['avgRespirationRate'] == 0.0 and raw_daily_metrics.get('respirationData'): # Only if not set by daily summary
+        features['avgRespirationRate'] = raw_daily_metrics['respirationData'].get('avgSleepRespirationValue', raw_daily_metrics['respirationData'].get('avgWakingRespirationValue', 0.0))
+
+    # --- Process Stress Data (Fallback if not in daily summary) ---
+    if features['avgStress'] == 0.0 and raw_daily_metrics.get('stressData'): # Only if not set by daily summary
+        features['avgStress'] = raw_daily_metrics['stressData'].get('avgStressLevel', 0.0)
+
+    # --- Process Body Battery Data (Fallback if not in daily summary, or for specific 'total') ---
+    body_battery_data = raw_daily_metrics.get('bodyBatteryData', [])
+    if features['bodyBatteryEndValue'] == 0.0 and isinstance(body_battery_data, list) and len(body_battery_data) > 0:
+        # If daily summary didn't provide it, try to get 'total' from the first item of the list
+        features['bodyBatteryEndValue'] = body_battery_data[0].get('total', 0.0)
+
+
+    # --- Process Activity Data ---
+    activity_data = raw_daily_metrics.get('activityData', [])
+    if activity_data:
+        # Reset 'NoActivity' flag, we found at least one activity
+        features['activityTypeFlags']['NoActivity'] = 0
+
+        for activity in activity_data:
+            # 'activityType' is a dict, and 'typeKey' is the specific string
+            activity_type_key = activity.get('activityType', {}).get('typeKey', '').lower()
+            if 'strength_training' in activity_type_key:
+                features['activityTypeFlags']['Strength'] = 1
+            elif 'running' in activity_type_key or 'cycling' in activity_type_key or 'swimming' in activity_type_key or 'cardio' in activity_type_key:
+                features['activityTypeFlags']['Cardio'] = 1
+            elif 'yoga' in activity_type_key:
+                features['activityTypeFlags']['Yoga'] = 1
+            elif 'stretching' in activity_type_key:
+                features['activityTypeFlags']['Stretching'] = 1
+            else:
+                # If it's a recognized activity but not one of our specific flags
+                features['activityTypeFlags']['OtherActivity'] = 1
+
+    return features
+
+def create_state_vectors(historical_daily_features: List[Dict[str, Any]], num_days_in_state: int) -> List[Dict[str, Any]]:
+    """
+    Creates time-series state vectors from historical daily features.
+    Each state vector represents 'num_days_in_state' consecutive days of features.
+
+    Args:
+        historical_daily_features (List[Dict[str, Any]]): A list of standardized daily feature dictionaries,
+                                                           sorted from oldest to newest.
+        num_days_in_state (int): The number of past days to include in each state vector (your 'x').
+
+    Returns:
+        List[Dict[str, Any]]: A list of state vectors. Each state vector is a dictionary
+                              containing 'date_end' (the date of the last day in the sequence)
+                              and 'features' (a list of dictionaries, one for each day in the sequence).
+    """
+    state_vectors = []
+    if len(historical_daily_features) < num_days_in_state:
+        print(f"Warning: Not enough historical data ({len(historical_daily_features)} days) to create "
+              f"state vectors of {num_days_in_state} days. Need at least {num_days_in_state} days.")
+        return []
+
+    for i in range(len(historical_daily_features) - num_days_in_state + 1):
+        # A state vector consists of 'num_days_in_state' consecutive days
+        current_state_sequence = historical_daily_features[i : i + num_days_in_state]
+
+        # The 'date_end' for the state vector is the date of the last day in the sequence
+        date_end = current_state_sequence[-1]['date']
+
+        # We'll include all extracted features for each day in the sequence
+        state_vectors.append({
+            'date_end': date_end,
+            'features': current_state_sequence
+        })
+
+    return state_vectors
+
+# --- Main execution for testing purposes ---
+if __name__ == "__main__":
+    # This block is for testing feature_engineer.py independently.
+    # In a real scenario, it would be called by main.py or other modules.
+
+    # Adjust NUM_DAYS_TO_FETCH_RAW if you want to test with more/less data
+    # NUM_DAYS_FOR_STATE determines the length of each state vector (your 'x')
+    NUM_DAYS_FOR_STATE = 7 # Example: use 7 days for the state vector (your 'x')
+    NUM_DAYS_TO_FETCH_RAW = NUM_DAYS_FOR_STATE + 2 # Fetch enough for multiple state vectors
+
+    from src.data_ingestion.garmin_parser import get_historical_metrics
+
+    print("--- Running feature_engineer.py in standalone test mode ---")
+
+    print(f"\nCollecting historical data for the last {NUM_DAYS_TO_FETCH_RAW} days...")
+    raw_historical_data = get_historical_metrics(NUM_DAYS_TO_FETCH_RAW)
+
+    if raw_historical_data:
+        print(f"\n--- Processing {len(raw_historical_data)} days of raw data into features ---")
+        processed_features = []
+        for day_raw_data in raw_historical_data:
+            daily_features = extract_daily_features(day_raw_data)
+            processed_features.append(daily_features)
+            # Print a simplified view of the extracted features for each day
+            print(f"  Date: {daily_features['date']}, Sleep Proxy: {daily_features['sleepMetrics']}, "
+                  f"Steps: {daily_features['totalSteps']}, Avg HR: {daily_features['avgHeartRate']:.1f}, "
+                  f"Resting HR: {daily_features['restingHeartRate']:.1f}, "
+                  f"Avg Respiration: {daily_features['avgRespirationRate']:.1f}, "
+                  f"Avg Stress: {daily_features['avgStress']:.1f}, BB End: {daily_features['bodyBatteryEndValue']:.1f}, "
+                  f"Activities: {daily_features['activityTypeFlags']}")
+
+        print(f"\n--- Creating state vectors of {NUM_DAYS_FOR_STATE} days ---")
+        state_vectors = create_state_vectors(processed_features, NUM_DAYS_FOR_STATE)
+
+        if state_vectors:
+            print(f"Successfully created {len(state_vectors)} state vector(s).")
+            # Print the last state vector as an example
+            print(f"\n--- Example Last State Vector (Ending {state_vectors[-1]['date_end']}) ---")
+            for i, day_feature in enumerate(state_vectors[-1]['features']):
+                print(f"  Day {i+1} ({day_feature['date']}):")
+                print(f"    Total Steps: {day_feature['totalSteps']}")
+                print(f"    Avg HR: {day_feature['avgHeartRate']:.1f}")
+                print(f"    Resting HR: {day_feature['restingHeartRate']:.1f}")
+                print(f"    Avg Respiration: {day_feature['avgRespirationRate']:.1f}")
+                print(f"    Avg Stress: {day_feature['avgStress']:.1f}")
+                print(f"    Body Battery End: {day_feature['bodyBatteryEndValue']:.1f}")
+                print(f"    Activities: {day_feature['activityTypeFlags']}")
+                print(f"    Bed Time GMT: {day_feature['bedTimeGMT']}")
+                print(f"    Wake Time GMT: {day_feature['wakeTimeGMT']}")
+                print(f"    Sleep Metrics: {day_feature['sleepMetrics']}")
+        else:
+            print("No state vectors could be created. Check if enough historical data was fetched.")
     else:
-        # If no non-awake sleep, these ratios are meaningless, no points added
-        pass
-
-    # 3. Restlessness (lower is better, contributes up to 10 points)
-    # This is a heuristic: fewer restless moments mean higher score
-    if restless_moments_count <= 5:
-        score += 10.0
-    elif 5 < restless_moments_count <= 10:
-        score += 5.0
-    # No points for very high restlessness
-
-    # 4. Resting Heart Rate (lower is generally better, contributes up to 10 points)
-    # This is a very simplified heuristic, assumes lower is better.
-    # A personalized baseline would be better here.
-    if resting_heart_rate > 0: # Ensure data exists
-        if resting_heart_rate <= 55: # Excellent
-            score += 10.0
-        elif 55 < resting_heart_rate <= 65: # Good
-            score += 5.0
-        # No points for higher RHR, or even negative for very high RHR in a more advanced model
-
-    # Ensure score is within 0-100 range
-    return max(0.0, min(100.0, score))
-
+        print("No raw historical data fetched. Cannot proceed with feature engineering.")

@@ -80,13 +80,13 @@ def extract_daily_features(raw_daily_metrics: Dict[str, Any]) -> Dict[str, Any]:
 
         # Refined logic for avg_heart_rate:
         # Try to calculate avg_heart_rate from minAvgHeartRate and maxAvgHeartRate from dailySummaryData
-        min_avg_hr = daily_summary_data.get('minAvgHeartRate', 0)
-        max_avg_hr = daily_summary_data.get('maxAvgHeartRate', 0)
-        if min_avg_hr > 0 and max_avg_hr > 0:
-            features['avg_heart_rate'] = (min_avg_hr + max_avg_hr) / 2.0
-        else:
-            # If min/max avg HR not available, try the general 'averageHeartRate' key
-            features['avg_heart_rate'] = daily_summary_data.get('averageHeartRate', features['avg_heart_rate'])
+        #min_avg_hr = daily_summary_data.get('minAvgHeartRate', 0)
+        #max_avg_hr = daily_summary_data.get('maxAvgHeartRate', 0)
+        #if min_avg_hr > 0 and max_avg_hr > 0:
+        #    features['avg_heart_rate'] = (min_avg_hr + max_avg_hr) / 2.0
+        #else:
+        #    # If min/max avg HR not available, try the general 'averageHeartRate' key
+        features['avg_heart_rate'] = daily_summary_data.get('averageHeartRate', 0.0)
 
 
     # --- Process Heart Rate Data (Fallback/Detail for avg HR) ---

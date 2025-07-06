@@ -198,9 +198,21 @@ class DataProcessor:
         reconstructed_features['sleep_metrics']['resting_heart_rate'] = float(flat_features[idx]); idx += 1
 
         # Activity Type Flags
-        activity_keys = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity', 'NoActivity']
+        activity_keys = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity'] # Exclude NoActivity for direct prediction
+        predicted_activities_flags = {}
         for key in activity_keys:
-            reconstructed_features['activity_type_flags'][key] = int(round(flat_features[idx])); idx += 1 # Round to int for flags
+            # Clip to [0,1] and round to nearest integer (0 or 1)
+            predicted_activities_flags[key] = int(round(np.clip(flat_features[idx], 0, 1))); idx += 1
+
+        # Determine 'NoActivity' based on whether any other activity was predicted as 1
+        if any(predicted_activities_flags.values()):
+            reconstructed_features['activity_type_flags']['NoActivity'] = 0
+        else:
+            reconstructed_features['activity_type_flags']['NoActivity'] = 1
+
+        # Assign the predicted specific activities
+        for key in activity_keys:
+            reconstructed_features['activity_type_flags'][key] = predicted_activities_flags[key]
 
         # Time features (reconstruct as strings if needed, or keep as numerical)
         # For simplicity, we'll keep them numerical here in the reconstructed dict

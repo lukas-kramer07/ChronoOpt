@@ -17,15 +17,15 @@ def calculate_sleep_score_proxy(sleep_data: dict) -> float:
         return 50.0 # Default/neutral score if no sleep data
 
     # Extract relevant fields, providing default values if keys are missing
-    daily_sleep_dto = sleep_data.get('dailySleepDTO', {})
-    total_sleep_seconds = daily_sleep_dto.get('sleepTimeSeconds', 0)
-    deep_sleep_seconds = daily_sleep_dto.get('deepSleepSeconds', 0)
-    rem_sleep_seconds = daily_sleep_dto.get('remSleepSeconds', 0)
-    awake_sleep_seconds = daily_sleep_dto.get('awakeSleepSeconds', 0)
+    daily_sleep_dto = sleep_data
+    total_sleep_seconds = daily_sleep_dto.get('total_sleep_seconds', 0)
+    deep_sleep_seconds = daily_sleep_dto.get('deep_sleep_seconds', 0)
+    rem_sleep_seconds = daily_sleep_dto.get('rem_sleep_seconds', 0)
+    awake_sleep_seconds = daily_sleep_dto.get('awake_sleep_seconds', 0)
 
-    restless_moments_count = sleep_data.get('restlessMomentsCount', 0)
-    resting_heart_rate = sleep_data.get('restingHeartRate', 0) # From sleepData
-    avg_sleep_stress = daily_sleep_dto.get('avgSleepStress', 0) # Average stress during sleep
+    restless_moments_count = sleep_data.get('restless_moments_count', 0)
+    resting_heart_rate = sleep_data.get('resting_heart_rate', 0) # From sleepData
+    avg_sleep_stress = daily_sleep_dto.get('avg_sleep_stress', 0) # Average stress during sleep
 
     score = 0.0
 

@@ -1,7 +1,8 @@
 # src/models/prediction_model.py
 # This file will contain the PyTorch-based prediction model (e.g., LSTM)
 # that predicts the next day's full set of features, with GPU support and
-# training/validation split, now including a learning rate scheduler.
+# training/validation split, now including a learning rate scheduler and
+# per-metric error calculation.
 
 import torch
 import torch.nn as nn
@@ -11,6 +12,7 @@ from typing import List, Dict, Any
 import numpy as np
 from datetime import datetime
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error # Import MAE
 
 # 1. Device Configuration: Check for CUDA (GPU) availability
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -177,35 +179,51 @@ class PredictionModel(nn.Module):
             predictions = self(X_test_tensor)
         return predictions.cpu().numpy() # Move predictions back to CPU before converting to NumPy
 
-    def evaluate_model(self, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, float]:
+    def evaluate_model(self, X_test: np.ndarray, y_test: np.ndarray, feature_names: List[str]) -> Dict[str, float]:
         """
-        Evaluates the model's performance on a test set.
+        Evaluates the model's performance on a test set, calculating overall MSE and MAE per feature.
 
         Args:
             X_test (np.ndarray): Test input features.
             y_test (np.ndarray): Test target features.
+            feature_names (List[str]): List of names for each feature, in the order they appear in y_test.
 
         Returns:
-            Dict[str, float]: Dictionary of evaluation metrics (e.g., MSE).
+            Dict[str, float]: Dictionary of evaluation metrics (overall MSE, and MAE for each feature).
         """
         self.eval() # Set model to evaluation mode
         with torch.no_grad():
             X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(self.device)
             y_test_tensor = torch.tensor(y_test, dtype=torch.float32).to(self.device)
 
-            predictions = self(X_test_tensor)
-            mse = nn.MSELoss()(predictions, y_test_tensor).item()
-            print(f"Model Evaluation - MSE: {mse:.4f}")
-            return {"mse": mse}
+            predictions_scaled = self(X_test_tensor)
+            mse = nn.MSELoss()(predictions_scaled, y_test_tensor).item()
+
+            # Convert predictions and actuals back to CPU and NumPy for MAE calculation
+            predictions_np = predictions_scaled.cpu().numpy()
+            y_test_np = y_test_tensor.cpu().numpy()
+
+            # Calculate MAE for each feature
+            per_feature_mae = {}
+            for i, feature_name in enumerate(feature_names):
+                mae = mean_absolute_error(y_test_np[:, i], predictions_np[:, i])
+                per_feature_mae[f"MAE_{feature_name}"] = mae
+
+            print(f"Model Evaluation - Overall MSE: {mse:.4f}")
+            print("Mean Absolute Error (MAE) per feature (scaled values):")
+            for feature, mae_val in per_feature_mae.items():
+                print(f"  {feature}: {mae_val:.4f}")
+
+            return {"overall_mse": mse, **per_feature_mae}
 
 # Example usage (for internal testing of the PyTorch model)
 if __name__ == "__main__":
     # Dummy data for testing the PredictionModel class
     sequence_length = 7 # X days in state
     num_features_per_day = 23 # Total numerical features per day (adjust based on DataProcessor)
+    dummy_feature_names = [f"feature_{i}" for i in range(num_features_per_day)] # Dummy names
 
     # Create dummy data (batch_size, sequence_length, num_features_per_day)
-    # and corresponding targets (batch_size, num_features_per_day)
     num_samples = 100 # Need enough samples for split
     X_dummy = np.random.rand(num_samples, sequence_length, num_features_per_day)
     y_dummy = np.random.rand(num_samples, num_features_per_day) # Predicting all features for next day
@@ -233,7 +251,7 @@ if __name__ == "__main__":
     print("\nPredicted features for a test sample (first 5 values):")
     print(predicted_features[0, :5]) # Print only first 5 values for brevity
 
-    # Evaluate (using a subset of dummy data as test set)
+    # Evaluate (using the validation set from the split, or a separate hold-out test set if available)
     X_eval = X_dummy[80:]
     y_eval = y_dummy[80:]
-    model.evaluate_model(X_eval, y_eval)
+    model.evaluate_model(X_eval, y_eval, dummy_feature_names) # Pass dummy feature names

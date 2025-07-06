@@ -3,10 +3,10 @@
 # It handles data ingestion, feature engineering, and training/evaluation
 # of the prediction model.
 
-from datetime import datetime,timedelta
 import numpy as np
 import torch
-import os # For saving models
+import os
+from datetime import datetime, timedelta
 
 # Import modules from our project
 from src.data_ingestion.garmin_parser import get_historical_metrics
@@ -23,7 +23,8 @@ def run_prediction_pipeline():
     2. Engineers features for each day.
     3. Prepares data into (X, y) format for the PyTorch model.
     4. Initializes and trains the PredictionModel.
-    5. Evaluates the trained model.
+    5. Evaluates the trained model (with per-metric MAE).
+    6. Performs an example prediction.
     """
     print("--- Starting ChronoOpt Prediction Pipeline ---")
 
@@ -70,7 +71,6 @@ def run_prediction_pipeline():
 
     # --- 4. Model Initialization ---
     print("\nInitializing Prediction Model...")
-    # Pass the determined input_size and output_size to the model constructor
     model = PredictionModel(
         input_size=model_params['input_size'],
         hidden_size=model_params['hidden_size'],
@@ -93,14 +93,15 @@ def run_prediction_pipeline():
 
     # --- 6. Model Evaluation (on a subset of the data, typically the validation split) ---
     print("\nEvaluating Prediction Model...")
-    # For evaluation, we can reuse the test split from the train_model function
     num_test_samples = max(1, int(X_data.shape[0] * 0.1)) # Use 10% of data as test
-    X_test = X_data[-num_test_samples:]
-    y_test = y_data[-num_test_samples:]
+    X_test_scaled = X_data[-num_test_samples:]
+    y_test_scaled = y_data[-num_test_samples:]
 
-    if X_test.shape[0] > 0:
-        evaluation_metrics = model.evaluate_model(X_test, y_test)
-        print(f"Prediction Model Evaluation Results: {evaluation_metrics}")
+    if X_test_scaled.shape[0] > 0:
+        # Pass the feature names from the data_processor for MAE calculation
+        evaluation_metrics = model.evaluate_model(X_test_scaled, y_test_scaled, data_processor.numerical_feature_keys)
+        print(f"Prediction Model Evaluation Results: Overall MSE: {evaluation_metrics['overall_mse']:.4f}")
+        # Individual MAEs are printed within evaluate_model function
     else:
         print("Not enough data to perform a separate evaluation.")
 
@@ -109,21 +110,18 @@ def run_prediction_pipeline():
     print("\n--- Example Prediction for the next day ---")
     if X_data.shape[0] > 0:
         # Take the last state vector from X_data to predict the very next day
-        last_state_vector = X_data[-1].reshape(1, config.NUM_DAYS_FOR_STATE, model_input_size)
-        predicted_flat_features = model.predict(last_state_vector)
+        last_state_vector_scaled = X_data[-1].reshape(1, config.NUM_DAYS_FOR_STATE, model_input_size)
+        predicted_flat_features_scaled = model.predict(last_state_vector_scaled)
 
-        # Reconstruct the predicted features into a structured dictionary
-        # We need to determine the date for this predicted day.
-        # Get the date of the last day in the last state vector
-        last_day_date_str = processed_features[-1]['date']
-        last_day_date = datetime.strptime(last_day_date_str, "%Y-%m-%d").date()
-        predicted_date = (last_day_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        # Reconstruct the predicted features into a structured dictionary (inverse transform first)
+        last_processed_date_str = processed_features[-1]['date']
+        last_processed_date = datetime.strptime(last_processed_date_str, "%Y-%m-%d").date()
+        predicted_date = (last_processed_date + timedelta(days=1)).strftime("%Y-%m-%d")
 
         predicted_structured_features = data_processor.reconstruct_features_from_flat(
-            predicted_flat_features[0], date_str=predicted_date
+            predicted_flat_features_scaled[0], date_str=predicted_date
         )
         print(f"Predicted features for {predicted_date}:")
-        # Print a subset for readability
         print(f"  Total Steps: {predicted_structured_features['total_steps']:.0f}")
         print(f"  Avg HR: {predicted_structured_features['avg_heart_rate']:.1f}")
         print(f"  Avg Stress: {predicted_structured_features['avg_stress']:.1f}")
@@ -134,6 +132,7 @@ def run_prediction_pipeline():
         # Calculate the sleep score proxy from the predicted sleep metrics
         predicted_sleep_score = calculate_sleep_score_proxy(predicted_structured_features['sleep_metrics'])
         print(f"\nPredicted Sleep Score Proxy for {predicted_date}: {predicted_sleep_score:.2f}")
+
     else:
         print("Not enough data to make an example prediction.")
 
@@ -141,6 +140,5 @@ def run_prediction_pipeline():
 
 
 if __name__ == "__main__":
-    # Ensure the 'saved_models' directory exists
     os.makedirs('src/models/saved_models', exist_ok=True)
     run_prediction_pipeline()

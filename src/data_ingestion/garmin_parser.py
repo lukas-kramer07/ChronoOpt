@@ -8,7 +8,7 @@
 from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
-import json # For debugging/pretty printing raw data if needed
+import json
 
 # Import GarminConnect library
 from garminconnect import (
@@ -19,6 +19,9 @@ from garminconnect import (
 )
 
 # --- Configuration ---
+CACHE_DIR = "data/raw_data/" #run from root only
+os.makedirs(CACHE_DIR, exist_ok=True) # Ensure cache directory exists
+
 # Load environment variables from .env file
 load_dotenv()
 GARMIN_EMAIL = os.getenv("GARMIN_EMAIL")
@@ -68,6 +71,21 @@ def get_daily_metrics(date_str: str) -> dict:
         dict: A dictionary containing various metrics for the day.
               Returns an empty dictionary if data cannot be fetched or client is not available.
     """
+    #check whether data is already cached
+    cache_file_path = os.path.join(CACHE_DIR, f"{date_str}.json") 
+    if os.path.exists(cache_file_path):
+        try:
+            with open(cache_file_path, 'r') as f:
+                data = json.load(f)
+            print(f"  Fetching data for {date_str}... (from cache)")
+            return data
+        except json.JSONDecodeError:
+            print(f"  Error reading cache file {cache_file_path} (corrupted JSON). Will re-fetch.")
+            os.remove(cache_file_path) # Remove corrupted cache file
+        except Exception as e:
+            print(f"  Unexpected error reading cache file {cache_file_path}: {e}. Will re-fetch.")
+            os.remove(cache_file_path) # Remove corrupted cache file
+
     client = get_garmin_client()
     if not client:
         print(f"Garmin client not available. Cannot fetch data for {date_str}.")
@@ -127,6 +145,14 @@ def get_daily_metrics(date_str: str) -> dict:
         print(f"  Error fetching data for {date_str}: {e}. Skipping this date.")
         # Return empty data for this date to indicate failure
         return {}
+    
+    # now cache daily data (only if the data isn't from today)
+    if datetime.today().date() > datetime.strptime(date_str, "%Y-%m-%d").date():
+        try:
+            with open(cache_file_path, 'w') as f:
+                json.dump(daily_data, f, indent=4) # Use indent for readability
+        except IOError as e:
+            print(f"  Warning: Could not save data to cache file {cache_file_path}: {e}")
 
     return daily_data
 
@@ -140,11 +166,11 @@ def get_historical_metrics(num_days: int) -> list:
               Sorted from oldest to newest.
     """
     historical_data = []
-    today = datetime.now().date()
+    yesterday = datetime.now().date()-timedelta(1) #values for the current day typically not updated yet -> could lead to bugs
 
     print(f"\nCollecting historical data for the last {num_days} days...")
     for i in range(num_days):
-        current_date = today - timedelta(days=i)
+        current_date = yesterday - timedelta(days=i)
         date_str = current_date.strftime("%Y-%m-%d")
         daily_metrics = get_daily_metrics(date_str)
         if daily_metrics:
@@ -160,7 +186,7 @@ def get_historical_metrics(num_days: int) -> list:
 if __name__ == "__main__":
     # Example usage: Fetch data for the last 3 days
     print("--- Running garmin_parser.py in standalone test mode ---")
-    num_days_to_fetch = 2
+    num_days_to_fetch = 3
     historical_metrics = get_historical_metrics(num_days_to_fetch)
 
     if historical_metrics:
@@ -185,3 +211,12 @@ if __name__ == "__main__":
                     print(f"    sleepLevels Keys: {list(sleep_levels.keys())}")
             else:
                 print(f"  Sleep Data: (Not a dictionary, cannot show keys directly)")
+            
+            # Daily Summary Data
+            print(f"  Type of dailySummaryData: {type(day_data['dailySummaryData'])}")
+            if isinstance(day_data['dailySummaryData'], dict):
+                print(f"  Daily Summary Data Keys: {list(day_data['dailySummaryData'].keys())}")
+            else:
+                print(f"  Daily Summary Data: (Not a dictionary, cannot show keys directly)")
+
+            print(f"  ----------------------------------------")

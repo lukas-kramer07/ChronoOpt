@@ -198,3 +198,4 @@ data/*
 /src/models/saved_models/
 /src/rl_agent/saved_policies/
 /config/config.yaml
+.vscode

@@ -6,7 +6,7 @@
 # --- Data Ingestion & Feature Engineering ---
 # Number of historical days to fetch from Garmin Connect.
 # Ensure this is at least NUM_DAYS_FOR_STATE + 1 for training data generation.
-NUM_DAYS_TO_FETCH_RAW = 200 
+NUM_DAYS_TO_FETCH_RAW = 350 
 
 # Number of past days to include in each state vector (X in the RL context).
 NUM_DAYS_FOR_STATE = 7 
@@ -15,14 +15,16 @@ NUM_DAYS_FOR_STATE = 7
 # These parameters are for the PyTorch PredictionModel (LSTM).
 MODEL_HYPERPARAMETERS = {
     'input_size': None, # This will be determined dynamically by DataProcessor.output_size
-    'hidden_size': 64,  # Number of features in the LSTM's hidden state
+    'hidden_size': 128,  # Number of features in the LSTM's hidden state
     'output_size': None, # This will be determined dynamically by DataProcessor.output_size
-    'num_layers': 2,    # Number of stacked LSTM layers
+    'num_layers': 3,    # Number of stacked LSTM layers
     'epochs': 1_000_000,      # Number of training epochs
     'batch_size': 32,   # Batch size for training
-    'learning_rate': 0.01, # Learning rate for the optimizer
+    'learning_rate': 0.05, # Learning rate for the optimizer
     'validation_split': 0.2, # Fraction of data for validation
-    'patience': 500,     # Early stopping patience
+    'patience': 1000,     # Early stopping patience
+    'lr_scheduler_factor':  0.5, # factor by which the lr_scheduler changes the learning rate
+    'lr_scheduler_patience': 100, # lr_scheduler patience before chanign learning rate
 }
 
 # --- Reinforcement Learning ---

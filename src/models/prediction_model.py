@@ -1,14 +1,16 @@
 # src/models/prediction_model.py
 # This file will contain the PyTorch-based prediction model (e.g., LSTM)
-# that predicts the next day's full set of features, with GPU support.
+# that predicts the next day's full set of features, with GPU support and
+# training/validation split, now including a learning rate scheduler.
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau # Import the scheduler
 from typing import List, Dict, Any
 import numpy as np
 from datetime import datetime
-from sklearn.model_selection import train_test_split # For data splitting
+from sklearn.model_selection import train_test_split
 
 # 1. Device Configuration: Check for CUDA (GPU) availability
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,10 +36,12 @@ class PredictionModel(nn.Module):
         super(PredictionModel, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.device = device
+        self.device = device # Store the device for easy access within the model
 
-        
+        # Define the LSTM layer
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+
+        # Define the fully connected layer to map LSTM output to desired output size
         self.fc = nn.Linear(hidden_size, output_size)
 
         # Move the entire model to the selected device (CPU or GPU)
@@ -65,24 +69,26 @@ class PredictionModel(nn.Module):
 
     def train_model(self, X: np.ndarray, y: np.ndarray,
                     epochs: int = 100, batch_size: int = 32, learning_rate: float = 0.001,
-                    validation_split: float = 0.2, patience: int = 10):
+                    validation_split: float = 0.2, patience: int = 10,
+                    lr_scheduler_factor: float = 0.1, lr_scheduler_patience: int = 5):
         """
         Trains the prediction model with a training and validation split, and early stopping.
+        Now includes a learning rate scheduler.
 
         Args:
             X (np.ndarray): All input features (state vectors).
-                            Shape: (num_samples, sequence_length, num_features_per_day).
             y (np.ndarray): All target features (next day's features).
-                            Shape: (num_samples, num_features_per_day).
             epochs (int): Number of training epochs.
             batch_size (int): Batch size for training.
             learning_rate (float): Learning rate for the optimizer.
             validation_split (float): Fraction of the data to be used as validation data.
             patience (int): Number of epochs with no improvement on validation loss after which training will be stopped.
+            lr_scheduler_factor (float): Factor by which the learning rate will be reduced. new_lr = lr * factor.
+            lr_scheduler_patience (int): Number of epochs with no improvement after which learning rate will be reduced.
         """
         # Split data into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=validation_split, random_state=42, shuffle=False # Shuffle=False for time series
+            X, y, test_size=validation_split, random_state=42, shuffle=False
         )
 
         # Convert numpy arrays to PyTorch tensors and move to the correct device
@@ -96,10 +102,14 @@ class PredictionModel(nn.Module):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
         val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False) # No shuffle for validation
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         criterion = nn.MSELoss()
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+
+        # Initialize the learning rate scheduler
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=lr_scheduler_factor,
+                                       patience=lr_scheduler_patience)
 
         self.train() # Set model to training mode
         print("\nStarting model training...")
@@ -127,9 +137,12 @@ class PredictionModel(nn.Module):
                     val_loss += criterion(val_outputs, batch_y_val).item()
             val_loss /= len(val_loader) # Average validation loss over batches
 
+            # Step the learning rate scheduler
+            scheduler.step(val_loss)
+
             # Print progress
             if (epoch + 1) % 10 == 0 or epoch == 0: # Print first epoch and every 10th
-                print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
+                print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, LR: {optimizer.param_groups[0]["lr"]:.6f}')
 
             # Early Stopping
             if val_loss < best_val_loss:
@@ -193,7 +206,7 @@ if __name__ == "__main__":
 
     # Create dummy data (batch_size, sequence_length, num_features_per_day)
     # and corresponding targets (batch_size, num_features_per_day)
-    num_samples = 100
+    num_samples = 100 # Need enough samples for split
     X_dummy = np.random.rand(num_samples, sequence_length, num_features_per_day)
     y_dummy = np.random.rand(num_samples, num_features_per_day) # Predicting all features for next day
 
@@ -205,8 +218,14 @@ if __name__ == "__main__":
                             output_size=num_features_per_day,
                             num_layers=num_layers)
 
-    # Train the model
-    model.train_model(X_dummy, y_dummy, epochs=50, batch_size=16)
+    # Train the model with validation split, early stopping, and LR scheduler
+    model.train_model(X_dummy, y_dummy,
+                      epochs=100, # Reduced epochs for dummy test
+                      batch_size=16,
+                      validation_split=0.2,
+                      patience=10,
+                      lr_scheduler_factor=0.1, # Reduce LR by 10x
+                      lr_scheduler_patience=5) # Reduce LR if no improvement for 5 epochs
 
     # Make predictions
     test_sample_X = np.random.rand(1, sequence_length, num_features_per_day) # Predict for one sample

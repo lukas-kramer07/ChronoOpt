@@ -86,7 +86,9 @@ def run_prediction_pipeline():
         batch_size=model_params['batch_size'],
         learning_rate=model_params['learning_rate'],
         validation_split=model_params['validation_split'],
-        patience=model_params['patience']
+        patience=model_params['patience'],
+        lr_scheduler_factor=model_params['lr_scheduler_factor'],
+        lr_scheduler_patience=model_params['lr_scheduler_patience']
     )
 
     # --- 6. Model Evaluation (on a subset of the data, typically the validation split) ---

@@ -8,6 +8,7 @@ import torch.optim as optim
 from typing import List, Dict, Any
 import numpy as np
 from datetime import datetime
+from sklearn.model_selection import train_test_split # For data splitting
 
 # 1. Device Configuration: Check for CUDA (GPU) availability
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -62,49 +63,86 @@ class PredictionModel(nn.Module):
         out = self.fc(out[:, -1, :]) # Get output from the last time step
         return out
 
-    def train_model(self, X_train: np.ndarray, y_train: np.ndarray,
-                    epochs: int = 100, batch_size: int = 32, learning_rate: float = 0.001):
+    def train_model(self, X: np.ndarray, y: np.ndarray,
+                    epochs: int = 100, batch_size: int = 32, learning_rate: float = 0.001,
+                    validation_split: float = 0.2, patience: int = 10):
         """
-        Trains the prediction model.
+        Trains the prediction model with a training and validation split, and early stopping.
 
         Args:
-            X_train (np.ndarray): Training input features (state vectors).
-                                  Shape: (num_samples, sequence_length, num_features_per_day).
-            y_train (np.ndarray): Training target features (next day's features).
-                                  Shape: (num_samples, num_features_per_day).
+            X (np.ndarray): All input features (state vectors).
+                            Shape: (num_samples, sequence_length, num_features_per_day).
+            y (np.ndarray): All target features (next day's features).
+                            Shape: (num_samples, num_features_per_day).
             epochs (int): Number of training epochs.
             batch_size (int): Batch size for training.
             learning_rate (float): Learning rate for the optimizer.
+            validation_split (float): Fraction of the data to be used as validation data.
+            patience (int): Number of epochs with no improvement on validation loss after which training will be stopped.
         """
+        # Split data into training and validation sets
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=validation_split, random_state=42, shuffle=False # Shuffle=False for time series
+        )
+
         # Convert numpy arrays to PyTorch tensors and move to the correct device
         X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(self.device)
         y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(self.device)
+        X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(self.device)
+        y_val_tensor = torch.tensor(y_val, dtype=torch.float32).to(self.device)
 
-        # Create DataLoader for batching
+        # Create DataLoaders for batching
         train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+        val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False) # No shuffle for validation
 
         criterion = nn.MSELoss()
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
 
         self.train() # Set model to training mode
         print("\nStarting model training...")
-        for epoch in range(epochs):
-            for batch_X, batch_y in train_loader:
-                # batch_X and batch_y are already on the correct device due to DataLoader
-                # created from tensors moved to device
 
-                # Forward pass
+        best_val_loss = float('inf')
+        epochs_no_improve = 0
+
+        for epoch in range(epochs):
+            # Training loop
+            self.train() # Ensure model is in train mode
+            for batch_X, batch_y in train_loader:
                 outputs = self(batch_X)
                 loss = criterion(outputs, batch_y)
 
-                # Backward and optimize
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-            if (epoch + 1) % 10 == 0:
-                print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}')
+            # Validation loop
+            self.eval() # Set model to evaluation mode
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch_X_val, batch_y_val in val_loader:
+                    val_outputs = self(batch_X_val)
+                    val_loss += criterion(val_outputs, batch_y_val).item()
+            val_loss /= len(val_loader) # Average validation loss over batches
+
+            # Print progress
+            if (epoch + 1) % 10 == 0 or epoch == 0: # Print first epoch and every 10th
+                print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
+
+            # Early Stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_no_improve = 0
+                # Optionally save the best model weights
+                # torch.save(self.state_dict(), 'best_model.pth')
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve == patience:
+                    print(f"Early stopping at epoch {epoch+1} as validation loss did not improve for {patience} epochs.")
+                    break # Stop training
+
         print("Model training complete.")
 
     def predict(self, X_test: np.ndarray) -> np.ndarray:

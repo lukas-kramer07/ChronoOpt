@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
 import json
+import copy
+from typing import Dict, Any
 
 # Import GarminConnect library
 from garminconnect import (
@@ -64,7 +66,7 @@ def get_garmin_client():
 
 def get_daily_metrics(date_str: str) -> dict:
     """
-    Fetches a comprehensive set of daily Garmin metrics for a specified date.
+    Fetches a comprehensive set of daily Garmin metrics for a specified date. Caches the data for quicker access times.
     Args:
         date_str (str): The date in 'YYYY-MM-DD' format.
     Returns:
@@ -156,9 +158,31 @@ def get_daily_metrics(date_str: str) -> dict:
 
     return daily_data
 
+def _is_data_valid(data: Dict[str, Any]) -> bool:
+    """
+    Checks if the fetched data is valid and not just a set of empty/zero values.
+    Returns True if at least one core metric is present and non-zero.
+    """
+    if not isinstance(data, dict):
+        return False
+    
+    # Check for a few core metrics. If all are zero, the data is likely missing.
+    daily_summary = data.get('dailySummaryData', {})
+    if daily_summary.get('steps', 0) > 0:
+        return True
+    
+    # Sleep data check
+    sleep_data = data.get('sleepData', {})
+    if sleep_data and sleep_data.get('dailySleepDTO', {}).get('sleepTimeSeconds', 0) > 0:
+        return True
+        
+    return False
+
 def get_historical_metrics(num_days: int) -> list:
     """
     Collects historical Garmin metrics for the specified number of past days.
+    If data for a day is missing or invalid, it uses the data from the previous day.
+
     Args:
         num_days (int): The number of past days to collect data for.
     Returns:
@@ -166,17 +190,26 @@ def get_historical_metrics(num_days: int) -> list:
               Sorted from oldest to newest.
     """
     historical_data = []
-    yesterday = datetime.now().date()-timedelta(1) #values for the current day typically not updated yet -> could lead to bugs
+    yesterday = datetime.now().date() - timedelta(1) # Values for the current day typically not updated yet
 
     print(f"\nCollecting historical data for the last {num_days} days...")
     for i in range(num_days):
         current_date = yesterday - timedelta(days=i)
         date_str = current_date.strftime("%Y-%m-%d")
         daily_metrics = get_daily_metrics(date_str)
-        if daily_metrics:
+
+        if _is_data_valid(daily_metrics):
             historical_data.append(daily_metrics)
         else:
-            print(f"  No data retrieved for {date_str}. Skipping.")
+            print(f"  Data for {date_str} appears invalid/missing (key metrics are 0). Attempting to fill from previous day.")
+            if historical_data:
+                # Use a deep copy to avoid modifying the previous day's original data
+                last_day_data = copy.deepcopy(historical_data[-1])
+                last_day_data['date'] = date_str # Update the date to the current day
+                historical_data.append(last_day_data)
+                print(f"  Successfully filled data for {date_str} with data from {historical_data[-2]['date']}.")
+            else:
+                print(f"  No valid previous day's data available to fill the gap. Skipping {date_str}.")
 
     # Sort data oldest to newest for time series consistency
     historical_data.sort(key=lambda x: x['date'])
@@ -220,3 +253,5 @@ if __name__ == "__main__":
                 print(f"  Daily Summary Data: (Not a dictionary, cannot show keys directly)")
 
             print(f"  ----------------------------------------")
+    else:
+        print("No historical data fetched.")

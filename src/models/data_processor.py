@@ -204,7 +204,6 @@ class DataProcessor:
             # Clip to [0,1] and round to nearest integer (0 or 1)
             predicted_activities_flags[key] = int(round(np.clip(flat_features[idx], 0, 1))); idx += 1
 
-        # Determine 'NoActivity' based on whether any other activity was predicted as 1
         if any(predicted_activities_flags.values()):
             reconstructed_features['activity_type_flags']['NoActivity'] = 0
         else:
@@ -214,10 +213,7 @@ class DataProcessor:
         for key in activity_keys:
             reconstructed_features['activity_type_flags'][key] = predicted_activities_flags[key]
 
-        # Time features (reconstruct as strings if needed, or keep as numerical)
-        # For simplicity, we'll keep them numerical here in the reconstructed dict
-        # or convert to readable format if needed for display.
-        # For now, just assign the numerical values.
+        # Time features as numerical values
         bed_hour, bed_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
         wake_hour, wake_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
         reconstructed_features['bed_time_gmt'] = f"{bed_hour:02d}:{bed_minute:02d}" # Example string representation

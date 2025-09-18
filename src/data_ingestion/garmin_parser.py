@@ -166,22 +166,28 @@ def _is_data_valid(data: Dict[str, Any]) -> bool:
     if not isinstance(data, dict):
         return False
     
-    # Check for a few core metrics. If all are zero, the data is likely missing.
-    daily_summary = data.get('dailySummaryData', {})
-    if daily_summary.get('steps', 0) > 0:
+    # Check for steps data
+    daily_summary = data.get('dailySummaryData')
+    steps_value = daily_summary.get('steps') if isinstance(daily_summary, dict) else None
+    if isinstance(steps_value, (int, float)) and steps_value > 0:
         return True
     
-    # Sleep data check
-    sleep_data = data.get('sleepData', {})
-    if sleep_data and sleep_data.get('dailySleepDTO', {}).get('sleepTimeSeconds', 0) > 0:
-        return True
-        
+    # Check for sleep data
+    sleep_data = data.get('sleepData')
+    if isinstance(sleep_data, dict):
+        sleep_dto = sleep_data.get('dailySleepDTO')
+        if isinstance(sleep_dto, dict):
+            sleep_time_value = sleep_dto.get('sleepTimeSeconds')
+            if isinstance(sleep_time_value, (int, float)) and sleep_time_value > 0:
+                return True
+            
+    # If neither check passes, the data is not considered valid
     return False
 
 def get_historical_metrics(num_days: int) -> list:
     """
     Collects historical Garmin metrics for the specified number of past days.
-    If data for a day is missing or invalid, it uses the data from the previous day.
+    If data for a day is missing or invalid, it uses the data from the previous/next day.
 
     Args:
         num_days (int): The number of past days to collect data for.

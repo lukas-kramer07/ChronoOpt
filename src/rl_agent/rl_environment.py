@@ -1,0 +1,129 @@
+# src/rl_agent/RL_environment.py
+# This module defines the reinforcement learning environment for our
+# ChronoOpt agent. It will manage the state, actions, rewards, and
+# transitions based on the LSTM model's predictions.
+
+import numpy as np
+import torch
+from typing import Tuple, Dict, Any
+
+# TODO: Import the BioMetricPredictor and DataProcessor classes once finalized.
+# from src.models.saved_models import BioMetricPredictor
+# from src.models.data_processor import DataProcessor
+# from src.features.feature_engineer import extract_daily_features, create_state_vectors
+
+class ChronoOptEnv:
+    """
+    A custom reinforcement learning environment for optimizing daily routines
+    to improve a user's biometric health.
+
+    The environment uses a pre-trained LSTM model to predict the next day's
+    biometrics based on the current state and the agent's actions.
+
+    Currently, the state/decision space looks as follows:
+    
+    Agent-Controlled Features (11): total_steps, activity_Strength, activity_Cardio, activity_Yoga, activity_Stretching, 
+    activity_OtherActivity, activity_NoActivity, bed_time_gmt_hour, bed_time_gmt_minute, wake_time_gmt_hour, wake_time_gmt_minute
+    
+    Model-Predicted Features (12): avg_heart_rate, resting_heart_rate, avg_respiration_rate, avg_stress, body_battery_end_value, total_sleep_seconds,
+    deep_sleep_seconds, rem_sleep_seconds, awake_sleep_seconds, restless_moments_count, avg_sleep_stress, sleep_resting_heart_rate
+
+    The agents decisions are rewarded based on the calculated sleep score, the lstm predicts based on the agents decisions. The agent however, is meant to adapt to the individual user
+    and this environment is a pre-training for that purpose. Hence, absolute accuracy is not necessary.
+    """
+    def __init__(self,
+                 initial_state_data: np.ndarray,
+                 model: 'BioMetricPredictor',
+                 processor: 'DataProcessor',
+                 device: torch.device = torch.device("cpu")):
+        """
+        Initializes the environment.
+
+        Args:
+            initial_state_data (np.ndarray): A NumPy array representing the initial
+                                             historical state (e.g., 7 days of data).
+                                             Shape: (sequence_length, num_features).
+            model (BioMetricPredictor): The pre-trained LSTM prediction model.
+            processor (DataProcessor): The data processor for scaling and feature handling.
+            device (torch.device): The device (CPU or CUDA) to run the model on.
+        """
+        if initial_state_data.ndim != 2:
+            raise ValueError("initial_state_data must be a 2D NumPy array.")
+        
+        self.device = device
+        self.model = model.to(self.device)
+        self.model.eval() # Set model to evaluation mode
+        self.processor = processor
+
+        # The state is a queue or a fixed-length array of past daily feature vectors.
+        # We use a deque or a similar structure to efficiently manage the state history.
+        self.history = initial_state_data.tolist() # Convert to list for easy appending/popping
+
+        # Total features for one day = 11 (agent-controlled) + 12 (model-predicted) = 23
+        self.num_total_features = 23
+        self.num_agent_features = 11
+        self.num_model_features = 12
+
+        # TODO: define observation space
+        self.observation_space = None
+        
+        # Define the action space. This is a vector of 11 values corresponding to the
+        # agent-controlled features.
+        self.action_space = self.num_agent_features
+
+        # Agent-Controlled Features:
+        self.agent_features = [
+            'total_steps', 'activity_Strength', 'activity_Cardio', 'activity_Yoga',
+            'activity_Stretching', 'activity_OtherActivity', 'activity_NoActivity',
+            'bed_time_gmt_hour', 'bed_time_gmt_minute', 'wake_time_gmt_hour',
+            'wake_time_gmt_minute'
+        ]
+
+        # Model-Predicted Features:
+        self.model_features = [
+            'avg_heart_rate', 'resting_heart_rate', 'avg_respiration_rate',
+            'avg_stress', 'body_battery_end_value', 'total_sleep_seconds',
+            'deep_sleep_seconds', 'rem_sleep_seconds', 'awake_sleep_seconds',
+            'restless_moments_count', 'avg_sleep_stress', 'sleep_resting_heart_rate'
+        ]
+
+        # TODO: Define the reward function logic here.
+        self.reward_fn = self._calculate_reward
+        
+        print("ChronoOpt environment initialized.")
+        print(f"Initial state history length: {len(self.history)} days.")
+        print(f"Action space size: {self.action_space}")
+        
+    def reset(self) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Resets the environment to its initial state.
+
+        Returns:
+            Tuple[np.ndarray, Dict[str, Any]]:
+                observation (np.ndarray): The initial observation for the agent.
+                info (Dict[str, Any]): Additional info about the state.
+        """
+        # TODO: Implement reset logic, e.g., re-initialize history
+        self.history = self.initial_state_data.tolist()
+        # Get the current observation (the last N days from the history)
+        observation = np.array(self.history, dtype=np.float32)
+        info = {"message": "Environment reset."}
+        return observation, info
+
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        """
+        Performs one step in the environment given a vector of actions.
+
+        Args:
+            action (np.ndarray): A 1D NumPy array representing the agent's
+                                 chosen values for the 11 agent-controlled features.
+                                 Shape: (11,).
+
+       """
+        pass
+
+    def _calculate_reward(self, predicted_metrics: torch.Tensor) -> float:
+        """
+        TODO: Implement reward function. Most likely to be based on the sleep quality calculation from src/features/utils
+        """
+        pass

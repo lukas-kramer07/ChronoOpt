@@ -11,6 +11,7 @@ from typing import Tuple, Dict, Any
 # from src.models.saved_models import BioMetricPredictor
 # from src.models.data_processor import DataProcessor
 # from src.features.feature_engineer import extract_daily_features, create_state_vectors
+from src.features.utils import calculate_sleep_score_proxy
 
 class ChronoOptEnv:
     """
@@ -123,7 +124,5 @@ class ChronoOptEnv:
         pass
 
     def _calculate_reward(self, predicted_metrics: torch.Tensor) -> float:
-        """
-        TODO: Implement reward function. Most likely to be based on the sleep quality calculation from src/features/utils
-        """
-        pass
+        metrics_dict = {k:v for k,v in zip(self.model_features, predicted_metrics.detach().cpu().numpy().flatten())}
+        return calculate_sleep_score_proxy(metrics_dict) #the feature names are consistent

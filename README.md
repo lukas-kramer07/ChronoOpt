@@ -1,12 +1,12 @@
 # Circadian Rhythm Optimization System – Project Outline
 
-## 🧠 Objective
+## Objective
 
 To prototype an intelligent system that helps optimize personal circadian rhythms by leveraging bio-sensor data (e.g., Garmin) and reinforcement learning. The system simulates and learns optimal behaviors to improve sleep quality, recovery, and well-being.
 
 ---
 
-## 🎯 Final Goal
+## Final Goal
 
 Create a generalizable, adaptive agent that:
 
@@ -16,7 +16,7 @@ Create a generalizable, adaptive agent that:
 
 - Is backed by real physiology data or guided self-report
 
-## 🧩 Conceptual Architecture
+## Conceptual Architecture
 
 ### 1. **Reward Signal: Sleep Score Proxy**
 
@@ -86,7 +86,7 @@ Later:
 
 ---
 
-## 🧪 Simulation Loop
+## Simulation Loop
 
 ```text
 Past state (x days) 
@@ -99,7 +99,7 @@ Past state (x days)
 ```
 
 
-## 🛤️ Roadmap
+## Roadmap
 
 Circadian Rhythm Optimization System – Roadmap
 

@@ -124,5 +124,15 @@ class ChronoOptEnv:
         pass
 
     def _calculate_reward(self, predicted_metrics: torch.Tensor) -> float:
+        """
+        Calculate the reward (0-100) based on the sleep-proxy score. Can be expanded later.
+
+        Args: 
+            predicted_metrics (torch.Tensor): A tensor of predicted metrics from the LSTM.
+                                              Shape: (1, num_model_features) or (num_model_features,).
+
+        Returns:
+            float: The calculated reward value.
+        """
         metrics_dict = {k:v for k,v in zip(self.model_features, predicted_metrics.detach().cpu().numpy().flatten())}
         return calculate_sleep_score_proxy(metrics_dict) #the feature names are consistent

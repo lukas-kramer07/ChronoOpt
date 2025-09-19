@@ -20,19 +20,13 @@ Create a generalizable, adaptive agent that:
 
 ### 1. **Reward Signal: Sleep Score Proxy**
 
-- Garmin’s sleep score combines:
+- Sleep score combines:
   - Total sleep duration
   - Deep and REM sleep ratio
   - Restlessness
   - Recovery indicators (heart rate, respiratory rate)
-- We emulate this by using:
-  - `sleepTimeSeconds`
-  - `deepSleepSeconds`, `remSleepSeconds`, `awakeSleepSeconds`
-  - `restlessMomentsCount`
-  - `restingHeartRate`
-  - `averageRespirationValue`
 
-If sensor data is not available (e.g., for external users), we fallback to **self-reported sleep scores (1–100)**.
+If sensor data is not available (e.g., for external users), fallback to **self-reported sleep scores (1–100)**.
 
 ---
 
@@ -44,7 +38,7 @@ Each day is modeled based on features from prior *x* days:
 - `totalSteps`
 - `avgHeartRate`
 - `avgRespirationRate`
-- `previousSleepScore`
+- `previousSleepMetrics`
 - `activityType` flags (e.g., strength training, yoga, rest day)
 - `wakeTime`, `bedTime`
 - Additional behavioral flags (e.g., caffeine, screen exposure – optional for future)
@@ -72,6 +66,7 @@ Agent's policy space should be simple but impactful:
 - `WakeUp(hour)`
 - `DoActivity(type)`  
   (`None`, `Strength`, `Cardio`, `Yoga`, `Stretching`)
+- `totalSteps`
 
 
 Later:
@@ -94,11 +89,11 @@ Later:
 ## 🧪 Simulation Loop
 
 ```text
-Past state (x days) → Model → Predicted sleep quality
+Past state (x days) 
      ↓
  Agent selects action → Environment applies change → Next state
      ↓
- Reward (simulated or self-reported) computed
+ Model → Predicted sleep quality → Reward (simulated or self-reported) computed 
      ↓
  Update agent
 ```
@@ -109,7 +104,7 @@ Past state (x days) → Model → Predicted sleep quality
 Circadian Rhythm Optimization System – Roadmap
 
 1. Data Collection & Preparation  
-   - Gather and organize Garmin bio-sensor data  [DONE]  
+   - Gather and organize wearable bio-sensor data  [DONE]  
    - Clean, preprocess, and format for modeling  [DONE]
 
 2. Exploratory Data Analysis (EDA)  
@@ -117,15 +112,15 @@ Circadian Rhythm Optimization System – Roadmap
    - Identify missing data patterns and fallback strategies  [DONE]
 
 3. State Space & Feature Engineering  
-   - Define input features and time window `x`  
-   - Encode activity and behavioral flags
+   - Define input features and time window [DONE]  
+   - Encode activity and behavioral flags [DONE]
 
 4. Prediction Model Development  
-   - Prototype LSTM / TCN / Transformer architectures  
-   - Train and validate sleep quality prediction model
+   - Prototype LSTM / TCN / Transformer architectures [DONE] 
+   - Train and validate sleep quality prediction model [DONE]
 
 5. Reward Signal & Proxy Calibration  
-   - Calibrate sleep score proxy against Garmin scores  
+   - Calibrate sleep score proxy against typical scores [DONE]
    - Implement fallback for self-reported data
 
 6. Action Space Definition & Constraints  

@@ -87,9 +87,6 @@ class ChronoOptEnv:
             'deep_sleep_seconds', 'rem_sleep_seconds', 'awake_sleep_seconds',
             'restless_moments_count', 'avg_sleep_stress', 'sleep_resting_heart_rate'
         ]
-
-        # TODO: Define the reward function logic here.
-        self.reward_fn = self._calculate_reward
         
         print("ChronoOpt environment initialized.")
         print(f"Initial state history length: {len(self.history)} days.")
@@ -119,11 +116,46 @@ class ChronoOptEnv:
             action (np.ndarray): A 1D NumPy array representing the agent's
                                  chosen values for the 11 agent-controlled features.
                                  Shape: (11,).
-
+        Returns:
+            Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+                observation (np.ndarray): The new state after the action.
+                reward (float): The reward received from the action.
+                terminated (bool): Whether the episode has ended (prematurely, for instance due to too high stress or low sleep scores).
+                truncated (bool): Whether the episode was truncated due to a time limit.
+                info (Dict[str, Any]): Additional info about the step.
        """
-        pass
+        if action.shape[0] != self.num_agent_features:
+            raise ValueError(f"Action must be a 1D array of size {self.num_agent_features}.")
 
-    def _calculate_reward(self, predicted_metrics: torch.Tensor) -> float:
+        # 1. Get the current state (last N days of physiological data)
+        current_state = np.array(self.history, dtype=np.float32)
+        
+        # 2. combine the state with the chosen actions
+        model_input_np = self.processor.combine_state_action(current_state, action)
+        model_input = torch.from_numpy(model_input_np).unsqueeze(0).to(self.device)
+        
+        # 3. Predict the next day's physiological metrics
+        with torch.no_grad():
+            predicted_output = self.model(model_input)
+        
+        # 4. Calculate the reward based on the predicted metrics
+        reward = self.calculate_reward(predicted_output)
+        
+        # 5. Update the environment's state history
+        new_day_features = np.concatenate((action, predicted_output.detach().cpu().numpy().flatten()))
+        
+        self.history.popleft()
+        self.history.append(new_day_features.tolist())
+
+        # 6. Get the new observation and determine if the episode is terminated
+        observation = np.array(self.history, dtype=np.float32)
+        terminated = False # The episode ends after a fixed number of steps
+        truncated = False
+        info = {"predicted_metrics": new_day_features.tolist()}
+        
+        return observation, reward, terminated, truncated, info
+
+    def calculate_reward(self, predicted_metrics: torch.Tensor) -> float:
         """
         Calculate the reward (0-100) based on the sleep-proxy score. Can be expanded later.
 

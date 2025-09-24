@@ -5,6 +5,7 @@
 from typing import List, Dict, Any, Tuple
 import numpy as np
 from datetime import datetime
+import config
 
 class DataProcessor:
     """
@@ -15,36 +16,12 @@ class DataProcessor:
     def __init__(self):
         # Define the order of numerical features for a single day.
         # This order MUST be consistent across all data processing.
-        self.numerical_feature_keys = [
-            'total_steps',
-            'avg_heart_rate',
-            'resting_heart_rate',
-            'avg_respiration_rate',
-            'avg_stress',
-            'body_battery_end_value',
-            # Sleep Metrics (flattened)
-            'total_sleep_seconds',
-            'deep_sleep_seconds',
-            'rem_sleep_seconds',
-            'awake_sleep_seconds',
-            'restless_moments_count',
-            'avg_sleep_stress',
-            'sleep_resting_heart_rate', # Note: 'resting_heart_rate' from sleep_metrics
-            # Activity Type Flags (one-hot encoded)
-            'activity_Strength',
-            'activity_Cardio',
-            'activity_Yoga',
-            'activity_Stretching',
-            'activity_OtherActivity',
-            'activity_NoActivity',
-            # Time features (numerical representation of bed/wake times)
-            'bed_time_gmt_hour',
-            'bed_time_gmt_minute',
-            'wake_time_gmt_hour',
-            'wake_time_gmt_minute',
-        ]
-        self.output_size = len(self.numerical_feature_keys)
-        print(f"DataProcessor initialized. Total numerical features per day: {self.output_size}")
+        self.biometrical_keys = config.BIOMETRIC_KEYS
+        self.action_keys = config.ACTION_KEYS
+        self.numerical_feature_keys = self.action_keys+self.biometrical_keys
+        self.input_size = len(self.numerical_feature_keys)
+        self.output_size = len(self.biometrical_keys)
+        print(f"DataProcessor initialized. Total numerical features per day: {self.input_size}")
 
     def _convert_timestamp_to_time_features(self, timestamp_gmt: str) -> Tuple[int, int]:
         """
@@ -61,59 +38,44 @@ class DataProcessor:
         except (ValueError, TypeError):
             print(f"Warning: Could not parse timestamp {timestamp_gmt}. Returning (0, 0).")
             return 0, 0
-
+        
     def flatten_features_for_day(self, daily_features: Dict[str, Any]) -> np.ndarray:
         """
         Converts a single day's structured feature dictionary into a flat numerical NumPy array.
         Ensures consistent order as defined in self.numerical_feature_keys.
         """
         flat_features = []
-
-        # Process top-level numerical features
-        flat_features.append(daily_features.get('total_steps', 0))
-        flat_features.append(daily_features.get('avg_heart_rate', 0.0))
-        flat_features.append(daily_features.get('resting_heart_rate', 0.0))
-        flat_features.append(daily_features.get('avg_respiration_rate', 0.0))
-        flat_features.append(daily_features.get('avg_stress', 0.0))
-        flat_features.append(daily_features.get('body_battery_end_value', 0.0))
-
-        # Process sleep_metrics
-        sleep_metrics = daily_features.get('sleep_metrics', {})
-        flat_features.append(sleep_metrics.get('total_sleep_seconds', 0.0))
-        flat_features.append(sleep_metrics.get('deep_sleep_seconds', 0.0))
-        flat_features.append(sleep_metrics.get('rem_sleep_seconds', 0.0))
-        flat_features.append(sleep_metrics.get('awake_sleep_seconds', 0.0))
-        flat_features.append(sleep_metrics.get('restless_moments_count', 0.0))
-        flat_features.append(sleep_metrics.get('avg_sleep_stress', 0.0))
-        flat_features.append(sleep_metrics.get('resting_heart_rate', 0.0)) # From sleep_metrics
-
-        # Process activity_type_flags (one-hot encoded)
-        activity_flags = daily_features.get('activity_type_flags', {})
-        flat_features.append(float(activity_flags.get('Strength', 0)))
-        flat_features.append(float(activity_flags.get('Cardio', 0)))
-        flat_features.append(float(activity_flags.get('Yoga', 0)))
-        flat_features.append(float(activity_flags.get('Stretching', 0)))
-        flat_features.append(float(activity_flags.get('OtherActivity', 0)))
-        flat_features.append(float(activity_flags.get('NoActivity', 0)))
-
+        activity_set = {'activity_Strength', 'activity_Cardio', 'activity_Yoga', 'activity_Stretching', 'activity_OtherActivity', 'activity_NoActivity',}
+        sleep_set = {'total_sleep_seconds','deep_sleep_seconds', 'rem_sleep_seconds', 'awake_sleep_seconds', 'restless_moments_count', 'avg_sleep_stress', 'sleep_resting_heart_rate'}
+        
         # Process time features
         bed_hour, bed_minute = self._convert_timestamp_to_time_features(daily_features.get('bed_time_gmt', 'N/A'))
         wake_hour, wake_minute = self._convert_timestamp_to_time_features(daily_features.get('wake_time_gmt', 'N/A'))
-        flat_features.append(float(bed_hour))
-        flat_features.append(float(bed_minute))
-        flat_features.append(float(wake_hour))
-        flat_features.append(float(wake_minute))
+        time_dict= {'bed_time_gmt_hour':bed_hour, 'bed_time_gmt_minute':bed_minute, 'wake_time_gmt_hour':wake_hour, 'wake_time_gmt_minute':wake_minute}
+
+
+        for key in self.numerical_feature_keys:
+            if key in sleep_set:
+                sleep_metrics = daily_features.get('sleep_metrics', {})
+                flat_features.append(sleep_metrics.get(key,0.0))
+                continue
+            if key in activity_set:
+                activity_flags = daily_features.get('activity_type_flags', {})
+                flat_features.append(activity_flags.get(key,0))
+                continue
+            if key in time_dict:
+                flat_features.append(time_dict.get(key))
+                continue
+            flat_features.append(daily_features.get(key,0.0))
 
         return np.array(flat_features, dtype=np.float32)
 
-    def prepare_data_for_training(self, historical_daily_features: List[Dict[str, Any]], num_days_in_state: int) -> Tuple[np.ndarray, np.ndarray]:
+    def prepare_data_for_training(self, state_vectors: List[List[Dict[str, Any]]]) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Prepares the historical data into (X, y) pairs for model training.
+        Prepares the state vector data into (X, y) pairs for model training.
 
         Args:
-            historical_daily_features (List[Dict[str, Any]]): A list of standardized daily feature
-                                                              dictionaries, sorted oldest to newest.
-            num_days_in_state (int): The number of past days to include in each state vector (X).
+            state_vectors (List[List[Dict[str, Any]]]): A list of state_vectors, containing the data for a set number of days (config).
 
         Returns:
             Tuple[np.ndarray, np.ndarray]:
@@ -122,22 +84,11 @@ class DataProcessor:
         """
         X, y = [], []
 
-        if len(historical_daily_features) < num_days_in_state + 1: # Need X days for input, and 1 day for target
-            print(f"Warning: Not enough historical data ({len(historical_daily_features)} days) to create "
-                  f"training samples for {num_days_in_state} days in state. Need at least {num_days_in_state + 1} days.")
+        if len(state_vectors) < 0 or len(state_vectors[0])!=config.NUM_DAYS_FOR_STATE: # Need X days for input, and 1 day for target
+            print(f"Warning: No state vectors or size mismatch. #state_vectors={len(state_vectors)}; #state_vectors[0]={len(state_vectors[0])}")
             return np.array([]), np.array([])
 
-        for i in range(len(historical_daily_features) - num_days_in_state):
-            # Input sequence (X days)
-            current_state_sequence_dicts = historical_daily_features[i : i + num_days_in_state]
-            current_state_sequence_flat = [self.flatten_features_for_day(d) for d in current_state_sequence_dicts]
-            X.append(current_state_sequence_flat)
-
-            # Target (next day's features)
-            next_day_features_dict = historical_daily_features[i + num_days_in_state]
-            next_day_features_flat = self.flatten_features_for_day(next_day_features_dict)
-            y.append(next_day_features_flat)
-
+        # TODO: flatten and separate
         return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
 
     def reconstruct_features_from_flat(self, flat_features: np.ndarray, date_str: str = "N/A") -> Dict[str, Any]:
@@ -220,7 +171,7 @@ class DataProcessor:
         reconstructed_features['wake_time_gmt'] = f"{wake_hour:02d}:{wake_minute:02d}"
 
         return reconstructed_features
-
+    
 # Example usage (for internal testing of DataProcessor)
 if __name__ == "__main__":
     from src.features.feature_engineer import extract_daily_features, create_state_vectors

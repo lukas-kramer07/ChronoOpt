@@ -184,7 +184,7 @@ def _is_data_valid(data: Dict[str, Any]) -> bool:
     # If neither check passes, the data is not considered valid
     return False
 
-def get_historical_metrics(num_days: int) -> list:
+def get_historical_metrics(num_days: int, end_date:datetime|None = None) -> list:
     """
     Collects historical Garmin metrics for the specified number of past days.
     If data for a day is missing or invalid, it uses the data from the previous/next day.
@@ -196,11 +196,12 @@ def get_historical_metrics(num_days: int) -> list:
               Sorted from oldest to newest.
     """
     historical_data = []
-    yesterday = datetime.now().date() - timedelta(1) # Values for the current day typically not updated yet
+    if end_date is None:
+        end_date = datetime.today() - timedelta(days=1) # Values for the current day typically not updated yet
 
     print(f"\nCollecting historical data for the last {num_days} days...")
     for i in range(num_days):
-        current_date = yesterday - timedelta(days=i)
+        current_date = end_date - timedelta(days=i)
         date_str = current_date.strftime("%Y-%m-%d")
         daily_metrics = get_daily_metrics(date_str)
 

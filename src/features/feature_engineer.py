@@ -5,9 +5,7 @@
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-
-# Import the utility functions, including our sleep score proxy calculator
-from src.features.utils import calculate_sleep_score_proxy
+import copy 
 
 def extract_daily_features(raw_daily_metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -140,6 +138,40 @@ def extract_daily_features(raw_daily_metrics: Dict[str, Any]) -> Dict[str, Any]:
 
     return features
 
+def align_sleep_data(daily_features: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Shifts sleep metrics to align with the previous day's actions.
+    This ensures the sleep from the night of Day X -> Day X+1 is associated with Day X's routine.
+
+    Args:
+        daily_features (List[Dict[str, Any]]): A list of standardized daily feature dictionaries.
+
+    Returns:
+        List[Dict[str, Any]]: A new list of features with sleep data correctly shifted.
+    """
+    if len(daily_features) < 2:
+        print("Warning: Not enough data to align sleep metrics. Returning original list.")
+        return daily_features
+
+    aligned_features = copy.deepcopy(daily_features)
+
+    for i in range(len(aligned_features) - 1):
+        # Take the sleep metrics from the next day's entry and assign them to the current day
+        next_day_sleep_metrics = aligned_features[i + 1]['sleep_metrics']
+        next_day_bed_time = aligned_features[i + 1]['bed_time_gmt']
+        next_day_wake_time = aligned_features[i + 1]['wake_time_gmt']
+
+        # Update the current day's entry with the next day's sleep data
+        aligned_features[i]['sleep_metrics'] = next_day_sleep_metrics
+        aligned_features[i]['bed_time_gmt'] = next_day_bed_time
+        aligned_features[i]['wake_time_gmt'] = next_day_wake_time
+
+    # The last day in the list won't have sleep metrics from the next day, so we leave them as they are
+    # They will be placeholders and should be excluded from training sets if needed.
+
+    return aligned_features
+
+
 def create_state_vectors(historical_daily_features: List[Dict[str, Any]], num_days_in_state: int) -> List[Dict[str, Any]]:
     """
     Creates time-series state vectors from historical daily features.
@@ -155,15 +187,18 @@ def create_state_vectors(historical_daily_features: List[Dict[str, Any]], num_da
                               containing 'date_end' (the date of the last day in the sequence)
                               and 'features' (a list of dictionaries, one for each day in the sequence).
     """
+    # First, align the sleep data to ensure causal consistency
+    aligned_features = align_sleep_data(historical_daily_features)
+
     state_vectors = []
-    if len(historical_daily_features) < num_days_in_state:
-        print(f"Warning: Not enough historical data ({len(historical_daily_features)} days) to create "
+    if len(aligned_features) < num_days_in_state:
+        print(f"Warning: Not enough historical data ({len(aligned_features)} days) to create "
               f"state vectors of {num_days_in_state} days. Skipping state vector creation.")
         return []
 
-    for i in range(len(historical_daily_features) - num_days_in_state + 1):
+    for i in range(len(aligned_features) - num_days_in_state + 1):
         # A state vector consists of 'num_days_in_state' consecutive days
-        current_state_sequence = historical_daily_features[i : i + num_days_in_state]
+        current_state_sequence = aligned_features[i : i + num_days_in_state]
 
         # The 'date_end' for the state vector is the date of the last day in the sequence
         date_end = current_state_sequence[-1]['date']

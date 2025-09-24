@@ -189,21 +189,20 @@ def create_state_vectors(historical_daily_features: List[Dict[str, Any]], num_da
     """
     # First, align the sleep data to ensure causal consistency
     aligned_features = align_sleep_data(historical_daily_features)
-
     state_vectors = []
-    if len(aligned_features) < num_days_in_state:
+    if len(aligned_features) < num_days_in_state + 1:
         print(f"Warning: Not enough historical data ({len(aligned_features)} days) to create "
-              f"state vectors of {num_days_in_state} days. Skipping state vector creation.")
+                f"state vectors of {num_days_in_state} days. Skipping state vector creation.")
         return []
 
-    for i in range(len(aligned_features) - num_days_in_state + 1):
+    # iterate up to the second-to-last day to ensure the final state vector has complete data
+    for i in range(len(aligned_features) - num_days_in_state):
         # A state vector consists of 'num_days_in_state' consecutive days
         current_state_sequence = aligned_features[i : i + num_days_in_state]
 
         # The 'date_end' for the state vector is the date of the last day in the sequence
         date_end = current_state_sequence[-1]['date']
 
-        # We'll include all extracted features for each day in the sequence
         state_vectors.append({
             'date_end': date_end,
             'features': current_state_sequence

@@ -5,7 +5,7 @@
 from typing import List, Dict, Any, Tuple
 import numpy as np
 from datetime import datetime
-import config
+from src import config
 
 class DataProcessor:
     """
@@ -75,7 +75,7 @@ class DataProcessor:
         Prepares the state vector data into (X, y) pairs for model training.
 
         Args:
-            state_vectors (List[List[Dict[str, Any]]]): A list of state_vectors, containing the data for a set number of days (config).
+            state_vectors (List[List[Dict[str, Any]]]): A list of state_vectors, containing the data for a set number of days (config.NUM_DAYS_FOR_STATE + 1).
 
         Returns:
             Tuple[np.ndarray, np.ndarray]:
@@ -84,12 +84,23 @@ class DataProcessor:
         """
         X, y = [], []
 
-        if len(state_vectors) < 0 or len(state_vectors[0])!=config.NUM_DAYS_FOR_STATE: # Need X days for input, and 1 day for target
-            print(f"Warning: No state vectors or size mismatch. #state_vectors={len(state_vectors)}; #state_vectors[0]={len(state_vectors[0])}")
+        # Ensure we have enough data for a full state vector and a target day
+        if not state_vectors or len(state_vectors[0]['features']) != config.NUM_DAYS_FOR_INPUT + 1:
+            print(f"Warning: Data size mismatch. Expected vectors of length {config.NUM_DAYS_FOR_INPUT + 1} (input + target). Got {len(state_vectors)} vectors with length {len(state_vectors[0]['features']) if state_vectors else 0}.")
             return np.array([]), np.array([])
 
-        # TODO: flatten and separate
+        flattened_vectors = np.array([[self.flatten_features_for_day(day) for day in v['features']] for v in state_vectors], dtype=np.float32)
+
+        # Separate into X (input sequence) and y (target features)
+        action_length = len(self.action_keys)
+        for v in flattened_vectors:
+            # X is the entire sequence except for the final day
+            X.append(v[:-1, :])
+            # y is the biometric data from the final day
+            y.append(v[-1, action_length:])
+            
         return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
+
 
     def reconstruct_features_from_flat(self, flat_features: np.ndarray, date_str: str = "N/A") -> Dict[str, Any]:
         """
@@ -127,8 +138,7 @@ if __name__ == "__main__":
     from src.data_ingestion.garmin_parser import get_historical_metrics
 
     print("--- Running DataProcessor in standalone test mode ---")
-    NUM_DAYS_FOR_STATE = 7
-    NUM_DAYS_TO_FETCH_RAW = NUM_DAYS_FOR_STATE + 5 # Need extra day for target
+    NUM_DAYS_TO_FETCH_RAW = config.NUM_DAYS_FOR_INPUT+5 # Need extra day for target
 
     raw_historical_data = get_historical_metrics(NUM_DAYS_TO_FETCH_RAW)
 
@@ -138,8 +148,9 @@ if __name__ == "__main__":
             daily_features = extract_daily_features(day_raw_data)
             processed_features.append(daily_features)
 
+        state_vectors = create_state_vectors(processed_features,config.NUM_DAYS_FOR_INPUT)
         processor = DataProcessor()
-        X_train_np, y_train_np = processor.prepare_data_for_training(processed_features, NUM_DAYS_FOR_STATE)
+        X_train_np, y_train_np = processor.prepare_data_for_training(state_vectors)
 
         print(f"\nShape of X_train (inputs): {X_train_np.shape}")
         print(f"Shape of y_train (targets): {y_train_np.shape}")

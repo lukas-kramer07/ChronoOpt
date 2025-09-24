@@ -94,7 +94,7 @@ class DataProcessor:
     def reconstruct_features_from_flat(self, flat_features: np.ndarray, date_str: str = "N/A") -> Dict[str, Any]:
         """
         Reconstructs a structured feature dictionary from a flat numerical NumPy array.
-        This is useful for converting model predictions back into a readable format.
+        This is useful for converting model predictions back into a readable format -> reconstruct only biometric data and not action data
 
         Args:
             flat_features (np.ndarray): A 1D NumPy array of numerical features.
@@ -105,70 +105,19 @@ class DataProcessor:
         """
         reconstructed_features = {
             'date': date_str,
-            'total_steps': 0,
-            'avg_heart_rate': 0.0,
-            'resting_heart_rate': 0.0,
-            'avg_respiration_rate': 0.0,
-            'avg_stress': 0.0,
-            'body_battery_end_value': 0.0,
-            'activity_type_flags': {
-                'Strength': 0, 'Cardio': 0, 'Yoga': 0, 'Stretching': 0,
-                'OtherActivity': 0, 'NoActivity': 0
-            },
-            'sleep_metrics': {
-                'total_sleep_seconds': 0.0, 'deep_sleep_seconds': 0.0,
-                'rem_sleep_seconds': 0.0, 'awake_sleep_seconds': 0.0,
-                'restless_moments_count': 0.0, 'avg_sleep_stress': 0.0,
-                'resting_heart_rate': 0.0
-            },
-            'wake_time_gmt': 'N/A',
-            'bed_time_gmt': 'N/A',
         }
+        sleep_set = {'total_sleep_seconds','deep_sleep_seconds', 'rem_sleep_seconds', 'awake_sleep_seconds', 'restless_moments_count', 'avg_sleep_stress', 'sleep_resting_heart_rate'}
 
         # Ensure the input array matches the expected size
         if len(flat_features) != self.output_size:
             print(f"Error: Flat features size mismatch. Expected {self.output_size}, got {len(flat_features)}.")
             return reconstructed_features
 
-        # Map flat features back to structured dictionary
-        idx = 0
-        reconstructed_features['total_steps'] = int(flat_features[idx]); idx += 1
-        reconstructed_features['avg_heart_rate'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['resting_heart_rate'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['avg_respiration_rate'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['avg_stress'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['body_battery_end_value'] = float(flat_features[idx]); idx += 1
-
-        # Sleep Metrics
-        reconstructed_features['sleep_metrics']['total_sleep_seconds'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['sleep_metrics']['deep_sleep_seconds'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['sleep_metrics']['rem_sleep_seconds'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['sleep_metrics']['awake_sleep_seconds'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['sleep_metrics']['restless_moments_count'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['sleep_metrics']['avg_sleep_stress'] = float(flat_features[idx]); idx += 1
-        reconstructed_features['sleep_metrics']['resting_heart_rate'] = float(flat_features[idx]); idx += 1
-
-        # Activity Type Flags
-        activity_keys = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity'] # Exclude NoActivity for direct prediction
-        predicted_activities_flags = {}
-        for key in activity_keys:
-            # Clip to [0,1] and round to nearest integer (0 or 1)
-            predicted_activities_flags[key] = int(round(np.clip(flat_features[idx], 0, 1))); idx += 1
-
-        if any(predicted_activities_flags.values()):
-            reconstructed_features['activity_type_flags']['NoActivity'] = 0
-        else:
-            reconstructed_features['activity_type_flags']['NoActivity'] = 1
-
-        # Assign the predicted specific activities
-        for key in activity_keys:
-            reconstructed_features['activity_type_flags'][key] = predicted_activities_flags[key]
-
-        # Time features as numerical values
-        bed_hour, bed_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
-        wake_hour, wake_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
-        reconstructed_features['bed_time_gmt'] = f"{bed_hour:02d}:{bed_minute:02d}" # Example string representation
-        reconstructed_features['wake_time_gmt'] = f"{wake_hour:02d}:{wake_minute:02d}"
+        for idx,key in enumerate(self.biometrical_keys):
+            if key in sleep_set:
+                reconstructed_features['sleep_metrics'][key] = flat_features[idx]
+            else:
+                reconstructed_features[key] = flat_features[idx]
 
         return reconstructed_features
     

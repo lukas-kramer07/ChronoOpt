@@ -25,6 +25,34 @@ MODEL_HYPERPARAMETERS = {
     'patience': 500,     # Early stopping patience
 }
 
+ACTION_KEYS = [ 
+    'bed_time_gmt_hour', 
+    'bed_time_gmt_minute', 
+    'wake_time_gmt_hour', 
+    'wake_time_gmt_minute',
+    'total_steps', 
+    'activity_Strength', 
+    'activity_Cardio', 
+    'activity_Yoga', 
+    'activity_Stretching', 
+    'activity_OtherActivity', 
+    'activity_NoActivity',
+]
+
+BIOMETRIC_KEYS = [
+    'avg_heart_rate',
+    'resting_heart_rate',
+    'avg_respiration_rate', 
+    'avg_stress', 
+    'body_battery_end_value', 
+    'total_sleep_seconds',
+    'deep_sleep_seconds', 
+    'rem_sleep_seconds', 
+    'awake_sleep_seconds', 
+    'restless_moments_count', 
+    'avg_sleep_stress', 
+    'sleep_resting_heart_rate']
+
 # --- Reinforcement Learning ---
 RL_AGENT_PARAMETERS = {
     'gamma': 0.99, # Discount factor

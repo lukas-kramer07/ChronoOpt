@@ -9,7 +9,7 @@
 NUM_DAYS_TO_FETCH_RAW = 200 
 
 # Number of past days to include in each state vector (X in the RL context).
-NUM_DAYS_FOR_STATE = 7 
+NUM_DAYS_FOR_INPUT= 7
 
 # --- Prediction Model Hyperparameters ---
 # These parameters are for the PyTorch PredictionModel (LSTM).

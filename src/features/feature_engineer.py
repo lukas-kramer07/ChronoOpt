@@ -180,7 +180,7 @@ def create_state_vectors(historical_daily_features: List[Dict[str, Any]], num_da
     Args:
         historical_daily_features (List[Dict[str, Any]]): A list of standardized daily feature dictionaries,
                                                            sorted from oldest to newest.
-        num_days_in_state (int): The number of past days to include in each state vector (your 'x').
+        num_days_in_state (int): The number of past days to include in each state vector.
 
     Returns:
         List[Dict[str, Any]]: A list of state vectors. Each state vector is a dictionary

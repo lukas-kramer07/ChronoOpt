@@ -4,8 +4,6 @@
 # of the prediction model.
 
 from datetime import datetime,timedelta
-import numpy as np
-import torch
 import os # For saving models
 
 # Import modules from our project
@@ -13,7 +11,7 @@ from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.features.feature_engineer import extract_daily_features
 from src.models.data_processor import DataProcessor
 from src.models.prediction_model import PredictionModel
-from src import config # Our configuration file
+from src import config
 from src.features.utils import calculate_sleep_score_proxy # For calculating reward later
 
 def run_prediction_pipeline():
@@ -50,7 +48,7 @@ def run_prediction_pipeline():
     # X: (num_samples, sequence_length, num_features_per_day)
     # y: (num_samples, num_features_per_day)
     X_data, y_data = data_processor.prepare_data_for_training(
-        processed_features, config.NUM_DAYS_FOR_STATE
+        processed_features, config.NUM_DAYS_FOR_INPUT
     )
 
     if X_data.shape[0] == 0:
@@ -107,7 +105,7 @@ def run_prediction_pipeline():
     print("\n--- Example Prediction for the next day ---")
     if X_data.shape[0] > 0:
         # Take the last state vector from X_data to predict the very next day
-        last_state_vector = X_data[-1].reshape(1, config.NUM_DAYS_FOR_STATE, model_input_size)
+        last_state_vector = X_data[-1].reshape(1, config.NUM_DAYS_FOR_INPUT, model_input_size)
         predicted_flat_features = model.predict(last_state_vector)
 
         # Reconstruct the predicted features into a structured dictionary

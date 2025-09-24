@@ -6,40 +6,14 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import copy 
+from src import config
 
 class FeatureEngineer:
     def __init__(self):
         # standard feature set
-        self.features_dict = {
-            'date': None,
-            'total_steps': 0,
-            'avg_heart_rate': 0.0,
-            'resting_heart_rate': 0.0,
-            'avg_respiration_rate': 0.0,
-            'avg_stress': 0.0,
-            'body_battery_end_value': 0.0,
-            'activity_type_flags': {
-                'Strength': 0,
-                'Cardio': 0,
-                'Yoga': 0,
-                'Stretching': 0,
-                'OtherActivity': 0,
-                'NoActivity': 1
-            },
-            'sleep_metrics': {
-                'total_sleep_seconds': 0.0,
-                'deep_sleep_seconds' : 0.0,
-                'rem_sleep_seconds' : 0.0,
-                'awake_sleep_seconds': 0.0,
-                'restless_moments_count': 0.0,
-                'avg_sleep_stress': 0.0,
-                'resting_heart_rate':0.0,
-            },
-            'wake_time_gmt': 'N/A',
-            'bed_time_gmt': 'N/A',
-        }
+        self.features_dict = config.STANDARD_FEATURES
 
-    def extract_daily_features(self, raw_daily_metrics: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_daily_features(self, raw_daily_metrics: Dict[str, Any], features: Dict[str,Any]|None =None) -> Dict[str, Any]:
         """
         Extracts and standardizes key daily features from the raw Garmin metrics.
         Handles missing data by returning default/N/A values, explicitly converting
@@ -52,7 +26,8 @@ class FeatureEngineer:
         Returns:
             Dict[str, Any]: A standardized dictionary of daily features.
         """
-        features = copy.deepcopy(self.features_dict)
+        if features is None:
+            features = copy.deepcopy(self.features_dict)
 
         # --- Process Sleep Data ---
         sleep_data = raw_daily_metrics.get('sleepData', {})

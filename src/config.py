@@ -25,6 +25,21 @@ MODEL_HYPERPARAMETERS = {
     'patience': 500,     # Early stopping patience
 }
 
+# --- Reinforcement Learning ---
+RL_AGENT_PARAMETERS = {
+    'gamma': 0.99, # Discount factor
+    'epsilon_start': 1.0,
+    'epsilon_end': 0.01,
+    'epsilon_decay': 0.995,
+    'buffer_size': 10000,
+    'learning_rate': 0.0005,
+    'target_update_frequency': 10,
+}
+
+# --- Other Global Settings ---
+# Seed for reproducibility
+RANDOM_SEED = 42
+
 ACTION_KEYS = [ 
     'bed_time_gmt_hour', 
     'bed_time_gmt_minute', 
@@ -53,17 +68,31 @@ BIOMETRIC_KEYS = [
     'avg_sleep_stress', 
     'sleep_resting_heart_rate']
 
-# --- Reinforcement Learning ---
-RL_AGENT_PARAMETERS = {
-    'gamma': 0.99, # Discount factor
-    'epsilon_start': 1.0,
-    'epsilon_end': 0.01,
-    'epsilon_decay': 0.995,
-    'buffer_size': 10000,
-    'learning_rate': 0.0005,
-    'target_update_frequency': 10,
-}
-
-# --- Other Global Settings ---
-# Seed for reproducibility
-RANDOM_SEED = 42
+# the standard features to extract from the raw data
+STANDARD_FEATURES = {
+    'date': None,
+    'total_steps': 0,
+    'avg_heart_rate': 0.0,
+    'resting_heart_rate': 0.0,
+    'avg_respiration_rate': 0.0,
+    'avg_stress': 0.0,
+    'body_battery_end_value': 0.0,
+    'activity_type_flags': {
+        'Strength': 0,
+        'Cardio': 0,
+        'Yoga': 0,
+        'Stretching': 0,
+        'OtherActivity': 0,
+        'NoActivity': 1
+    },
+    'sleep_metrics': {
+        'total_sleep_seconds': 0.0,
+        'deep_sleep_seconds' : 0.0,
+        'rem_sleep_seconds' : 0.0,
+        'awake_sleep_seconds': 0.0,
+        'restless_moments_count': 0.0,
+        'avg_sleep_stress': 0.0,
+        'resting_heart_rate':0.0,
+    },
+    'wake_time_gmt': 'N/A',
+    'bed_time_gmt': 'N/A'}

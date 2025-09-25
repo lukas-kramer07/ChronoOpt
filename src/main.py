@@ -42,7 +42,7 @@ def run_prediction_pipeline():
         processed_features.append(daily_features)
     print(f"Successfully processed {len(processed_features)} days of features. Creating state vectors.")
    
-    state_vectors = feature_engineer.create_state_vectors(processed_features, config.NUM_DAYS_FOR_INPUT+1)
+    state_vectors = feature_engineer.create_state_vectors(processed_features, config.NUM_DAYS_FOR_INPUT)
     print(f"Successfully created {len(state_vectors)} state vectors of length {len(state_vectors[0]['features'])}.")
 
     # --- 3. Data Preparation for Model ---
@@ -108,7 +108,8 @@ def run_prediction_pipeline():
     print("\n--- Example Prediction for the next day ---")
     if X_data.shape[0] > 0:
         # Take the last state vector from X_data to predict the very next day
-        last_state_vector = X_data[-1].reshape(1, config.NUM_DAYS_FOR_INPUT, model_input_size)
+        last_state_vector = X_test[-1].reshape(1, config.NUM_DAYS_FOR_INPUT, model_input_size)
+        last_state_vector[-1, len(config.ACTION_KEYS):] = 0.0
         predicted_flat_features = model.predict(last_state_vector)
 
         # Reconstruct the predicted features into a structured dictionary
@@ -118,7 +119,7 @@ def run_prediction_pipeline():
         last_day_date_str = state_vectors[-1]['date_end']
         print(state_vectors[-1])
         last_day_date = datetime.strptime(last_day_date_str, "%Y-%m-%d").date()
-        predicted_date = (last_day_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        predicted_date = (last_day_date + timedelta(days=0)).strftime("%Y-%m-%d")
 
         predicted_structured_features = data_processor.reconstruct_features_from_flat(
             predicted_flat_features[0], date_str=predicted_date

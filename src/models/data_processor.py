@@ -85,8 +85,8 @@ class DataProcessor:
         X, y = [], []
 
         # Ensure we have enough data for a full state vector and a target day
-        if not state_vectors or len(state_vectors[0]['features']) != config.NUM_DAYS_FOR_INPUT + 1:
-            print(f"Warning: Data size mismatch. Expected vectors of length {config.NUM_DAYS_FOR_INPUT + 1} (input + target). Got {len(state_vectors)} vectors with length {len(state_vectors[0]['features']) if state_vectors else 0}.")
+        if not state_vectors or len(state_vectors[0]['features']) != config.NUM_DAYS_FOR_INPUT:
+            print(f"Warning: Data size mismatch. Expected vectors of length {config.NUM_DAYS_FOR_INPUT} (input + target). Got {len(state_vectors)} vectors with length {len(state_vectors[0]['features']) if state_vectors else 0}.")
             return np.array([]), np.array([])
 
         flattened_vectors = np.array([[self.flatten_features_for_day(day) for day in v['features']] for v in state_vectors], dtype=np.float32)
@@ -94,10 +94,13 @@ class DataProcessor:
         # Separate into X (input sequence) and y (target features)
         action_length = len(self.action_keys)
         for v in flattened_vectors:
-            # X is the entire sequence except for the final day
-            X.append(v[:-1, :])
-            # y is the biometric data from the final day
+            # y is the biometric data from the final, target day
             y.append(v[-1, action_length:])
+            
+            # X is the entire sequence except for the final day's biometric data, which is our target
+            input_sequence = np.copy(v)
+            input_sequence[-1, action_length:] = 0.0  # Mask out the biometric data from the last day
+            X.append(input_sequence)
             
         return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
 

@@ -18,7 +18,7 @@ MODEL_HYPERPARAMETERS = {
     'hidden_size': 64,  # Number of features in the LSTM's hidden state
     'output_size': None, # This will be determined dynamically by DataProcessor.output_size
     'num_layers': 2,    # Number of stacked LSTM layers
-    'epochs': 1_000_000,      # Number of training epochs
+    'epochs': 1_000,      # Number of training epochs
     'batch_size': 32,   # Batch size for training
     'learning_rate': 0.01, # Learning rate for the optimizer
     'validation_split': 0.2, # Fraction of data for validation

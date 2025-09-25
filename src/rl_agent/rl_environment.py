@@ -10,7 +10,7 @@ from typing import Tuple, Dict, Any
 # TODO: Import the BioMetricPredictor and DataProcessor classes once finalized.
 # from src.models.saved_models import BioMetricPredictor
 # from src.models.data_processor import DataProcessor
-# from src.features.feature_engineer import extract_daily_features, create_state_vectors
+# from src.features.feature_engineer import FeatureEngineer
 from src.features.utils import calculate_sleep_score_proxy
 
 class ChronoOptEnv:
@@ -133,7 +133,7 @@ class ChronoOptEnv:
         # 2. combine the state with the chosen actions
         model_input_np = self.processor.combine_state_action(current_state, action)
         model_input = torch.from_numpy(model_input_np).unsqueeze(0).to(self.device)
-        
+         
         # 3. Predict the next day's physiological metrics
         with torch.no_grad():
             predicted_output = self.model(model_input)
@@ -168,3 +168,4 @@ class ChronoOptEnv:
         """
         metrics_dict = {k:v for k,v in zip(self.model_features, predicted_metrics.detach().cpu().numpy().flatten())}
         return calculate_sleep_score_proxy(metrics_dict) #the feature names are consistent
+

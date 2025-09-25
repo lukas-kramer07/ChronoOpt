@@ -28,7 +28,7 @@ class FeatureEngineer:
         """
         if features is None:
             features = copy.deepcopy(self.features_dict)
-
+        features['date'] = raw_daily_metrics.get('date', None)
         # --- Process Sleep Data ---
         sleep_data = raw_daily_metrics.get('sleepData', {})
         if sleep_data:

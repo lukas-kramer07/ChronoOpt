@@ -116,6 +116,7 @@ class DataProcessor:
         """
         reconstructed_features = {
             'date': date_str,
+            'sleep_metrics':{}
         }
         sleep_set = {'total_sleep_seconds','deep_sleep_seconds', 'rem_sleep_seconds', 'awake_sleep_seconds', 'restless_moments_count', 'avg_sleep_stress', 'sleep_resting_heart_rate'}
 

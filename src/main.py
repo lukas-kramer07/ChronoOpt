@@ -8,8 +8,8 @@ import os # For saving models
 
 # Import modules from our project
 from src.data_ingestion.garmin_parser import get_historical_metrics
-from src.features.feature_engineer import extract_daily_features
 from src.models.data_processor import DataProcessor
+from src.features.feature_engineer import FeatureEngineer
 from src.models.prediction_model import PredictionModel
 from src import config
 from src.features.utils import calculate_sleep_score_proxy # For calculating reward later
@@ -35,21 +35,24 @@ def run_prediction_pipeline():
 
     # --- 2. Feature Engineering ---
     print(f"\nProcessing {len(raw_historical_data)} days of raw data into features...")
+    feature_engineer = FeatureEngineer()
     processed_features = []
     for day_raw_data in raw_historical_data:
-        daily_features = extract_daily_features(day_raw_data)
+        daily_features = feature_engineer.extract_daily_features(day_raw_data)
         processed_features.append(daily_features)
-    print(f"Successfully processed {len(processed_features)} days of features.")
+    print(f"Successfully processed {len(processed_features)} days of features. Creating state vectors.")
+   
+    state_vectors = feature_engineer.create_state_vectors(processed_features, config.NUM_DAYS_FOR_INPUT+1)
+    print(f"Successfully created {len(state_vectors)} state vectors of length {len(state_vectors[0]['features'])}.")
 
     # --- 3. Data Preparation for Model ---
     print("\nPreparing data for the prediction model...")
+    
     data_processor = DataProcessor()
 
     # X: (num_samples, sequence_length, num_features_per_day)
     # y: (num_samples, num_features_per_day)
-    X_data, y_data = data_processor.prepare_data_for_training(
-        processed_features, config.NUM_DAYS_FOR_INPUT
-    )
+    X_data, y_data = data_processor.prepare_data_for_training(state_vectors)
 
     if X_data.shape[0] == 0:
         print("Error: Not enough data to create training samples. Exiting pipeline.")
@@ -58,7 +61,7 @@ def run_prediction_pipeline():
     print(f"Data prepared: X_data shape {X_data.shape}, y_data shape {y_data.shape}")
 
     # Dynamically set input_size and output_size for the model
-    model_input_size = data_processor.output_size # Number of features per day
+    model_input_size = data_processor.input_size # Number of features per day
     model_output_size = data_processor.output_size # Predicting all features for the next day
 
     # Update model hyperparameters with dynamically determined sizes
@@ -111,7 +114,9 @@ def run_prediction_pipeline():
         # Reconstruct the predicted features into a structured dictionary
         # We need to determine the date for this predicted day.
         # Get the date of the last day in the last state vector
-        last_day_date_str = processed_features[-1]['date']
+
+        last_day_date_str = state_vectors[-1]['date_end']
+        print(state_vectors[-1])
         last_day_date = datetime.strptime(last_day_date_str, "%Y-%m-%d").date()
         predicted_date = (last_day_date + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -120,11 +125,9 @@ def run_prediction_pipeline():
         )
         print(f"Predicted features for {predicted_date}:")
         # Print a subset for readability
-        print(f"  Total Steps: {predicted_structured_features['total_steps']:.0f}")
         print(f"  Avg HR: {predicted_structured_features['avg_heart_rate']:.1f}")
         print(f"  Avg Stress: {predicted_structured_features['avg_stress']:.1f}")
         print(f"  Body Battery End: {predicted_structured_features['body_battery_end_value']:.1f}")
-        print(f"  Activities: {predicted_structured_features['activity_type_flags']}")
         print(f"  Sleep Metrics: {predicted_structured_features['sleep_metrics']}")
 
         # Calculate the sleep score proxy from the predicted sleep metrics

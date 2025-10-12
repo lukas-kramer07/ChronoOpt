@@ -1,8 +1,8 @@
 # src/models/prediction_model.py
 # This file will contain the PyTorch-based prediction model (e.g., LSTM)
 # that predicts the next day's full set of features, with GPU support and
-# training/validation split, now including a learning rate scheduler and
-# per-metric error calculation.
+# training/validation split, now including a learning rate scheduler,
+# per-metric error calculation, and regularization techniques (Dropout, Weight Decay, Gradient Clipping).
 
 import torch
 import torch.nn as nn
@@ -24,7 +24,8 @@ class PredictionModel(nn.Module):
     full set of features based on a sequence of past daily features.
     Supports GPU acceleration if available.
     """
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, num_layers: int = 1):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, num_layers: int = 1,
+                 dropout_rate: float = 0.25): # Hardcoded default dropout_rate
         """
         Initializes the PredictionModel.
 
@@ -34,6 +35,7 @@ class PredictionModel(nn.Module):
             output_size (int): The number of features to predict for the next day.
                                This should be equal to input_size.
             num_layers (int): Number of recurrent layers.
+            dropout_rate (float): Dropout probability for regularization.
         """
         super(PredictionModel, self).__init__()
         self.hidden_size = hidden_size
@@ -41,7 +43,11 @@ class PredictionModel(nn.Module):
         self.device = device # Store the device for easy access within the model
 
         # Define the LSTM layer
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        # Added dropout to LSTM if num_layers > 1 (standard practice)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate if num_layers > 1 else 0)
+
+        # Dropout layer after LSTM output (applied before the final FC layer)
+        self.dropout = nn.Dropout(dropout_rate)
 
         # Define the fully connected layer to map LSTM output to desired output size
         self.fc = nn.Linear(hidden_size, output_size)
@@ -49,7 +55,7 @@ class PredictionModel(nn.Module):
         # Move the entire model to the selected device (CPU or GPU)
         self.to(self.device)
 
-        print(f"PredictionModel initialized on {self.device} with input_size={input_size}, hidden_size={hidden_size}, output_size={output_size}, num_layers={num_layers}")
+        print(f"PredictionModel initialized on {self.device} with input_size={input_size}, hidden_size={hidden_size}, output_size={output_size}, num_layers={num_layers}, dropout_rate={dropout_rate}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -66,16 +72,24 @@ class PredictionModel(nn.Module):
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
 
         out, (hn, cn) = self.lstm(x, (h0, c0))
-        out = self.fc(out[:, -1, :]) # Get output from the last time step
+        
+        # Apply dropout to the output of the LSTM layer (only the last time step)
+        out = self.dropout(out[:, -1, :])
+
+        out = self.fc(out) # Pass through the fully connected layer
         return out
 
     def train_model(self, X: np.ndarray, y: np.ndarray,
                     epochs: int = 100, batch_size: int = 32, learning_rate: float = 0.001,
                     validation_split: float = 0.2, patience: int = 10,
-                    lr_scheduler_factor: float = 0.1, lr_scheduler_patience: int = 5):
+                    lr_scheduler_factor: float = 0.1, lr_scheduler_patience: int = 5,
+                    weight_decay: float = 1e-5, # Hardcoded default weight_decay (L2 regularization)
+                    grad_clip_norm: float = 1.0, # Hardcoded default grad_clip_norm
+                    training_noise_std: float = 0.05): # Added training_noise_std parameter
         """
         Trains the prediction model with a training and validation split, and early stopping.
-        Now includes a learning rate scheduler.
+        Now includes a learning rate scheduler, regularization (Weight Decay, Gradient Clipping),
+        and noise injection during training.
 
         Args:
             X (np.ndarray): All input features (state vectors).
@@ -87,6 +101,9 @@ class PredictionModel(nn.Module):
             patience (int): Number of epochs with no improvement on validation loss after which training will be stopped.
             lr_scheduler_factor (float): Factor by which the learning rate will be reduced. new_lr = lr * factor.
             lr_scheduler_patience (int): Number of epochs with no improvement after which learning rate will be reduced.
+            weight_decay (float): L2 regularization factor for the optimizer.
+            grad_clip_norm (float): Maximum norm for gradient clipping.
+            training_noise_std (float): Standard deviation of Gaussian noise to add to input features during training.
         """
         # Split data into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(
@@ -107,7 +124,7 @@ class PredictionModel(nn.Module):
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        optimizer = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=weight_decay) # Added weight_decay
 
         # Initialize the learning rate scheduler
         scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=lr_scheduler_factor,
@@ -123,14 +140,23 @@ class PredictionModel(nn.Module):
             # Training loop
             self.train() # Ensure model is in train mode
             for batch_X, batch_y in train_loader:
+                # Add Gaussian noise to the input batch_X during training
+                if training_noise_std > 0:
+                    noise = torch.randn_like(batch_X) * training_noise_std
+                    batch_X = batch_X + noise
+
                 outputs = self(batch_X)
                 loss = criterion(outputs, batch_y)
 
                 optimizer.zero_grad()
                 loss.backward()
+                
+                # Gradient Clipping
+                torch.nn.utils.clip_grad_norm_(self.parameters(), grad_clip_norm)
+                
                 optimizer.step()
 
-            # Validation loop
+            # Validation loop (NOISE IS NOT ADDED HERE - evaluate on clean data)
             self.eval() # Set model to evaluation mode
             val_loss = 0.0
             with torch.no_grad():
@@ -228,24 +254,28 @@ if __name__ == "__main__":
     X_dummy = np.random.rand(num_samples, sequence_length, num_features_per_day)
     y_dummy = np.random.rand(num_samples, num_features_per_day) # Predicting all features for next day
 
-    # Initialize the model
+    # Initialize the model with a hardcoded dropout rate
     hidden_size = 64
     num_layers = 2
+    dropout_rate = 0.2 # Hardcoded for this step
     model = PredictionModel(input_size=num_features_per_day,
                             hidden_size=hidden_size,
                             output_size=num_features_per_day,
-                            num_layers=num_layers)
+                            num_layers=num_layers,
+                            dropout_rate=dropout_rate)
 
-    # Train the model with validation split, early stopping, and LR scheduler
+    # Train the model with hardcoded regularization parameters
     model.train_model(X_dummy, y_dummy,
                       epochs=100, # Reduced epochs for dummy test
                       batch_size=16,
                       validation_split=0.2,
                       patience=10,
                       lr_scheduler_factor=0.1, # Reduce LR by 10x
-                      lr_scheduler_patience=5) # Reduce LR if no improvement for 5 epochs
+                      lr_scheduler_patience=5,
+                      weight_decay=1e-5, # Hardcoded for this step
+                      grad_clip_norm=1.0) # Hardcoded for this step
 
-    # Make predictions
+    # Make predictions (using a subset of dummy data as test set)
     test_sample_X = np.random.rand(1, sequence_length, num_features_per_day) # Predict for one sample
     predicted_features = model.predict(test_sample_X)
     print("\nPredicted features for a test sample (first 5 values):")
@@ -254,4 +284,4 @@ if __name__ == "__main__":
     # Evaluate (using the validation set from the split, or a separate hold-out test set if available)
     X_eval = X_dummy[80:]
     y_eval = y_dummy[80:]
-    model.evaluate_model(X_eval, y_eval, dummy_feature_names) # Pass dummy feature names
+    model.evaluate_model(X_eval, y_eval, dummy_feature_names)

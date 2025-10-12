@@ -9,22 +9,22 @@
 NUM_DAYS_TO_FETCH_RAW = 425 
 
 # Number of past days to include in each state vector (X in the RL context).
-NUM_DAYS_FOR_STATE = 7 
+NUM_DAYS_FOR_STATE = 10 
 
 # --- Prediction Model Hyperparameters ---
 # These parameters are for the PyTorch PredictionModel (LSTM).
 MODEL_HYPERPARAMETERS = {
     'input_size': None, # This will be determined dynamically by DataProcessor.output_size
-    'hidden_size': 64,  # Number of features in the LSTM's hidden state
+    'hidden_size': 32,  # Number of features in the LSTM's hidden state
     'output_size': None, # This will be determined dynamically by DataProcessor.output_size
     'num_layers': 2,    # Number of stacked LSTM layers
-    'epochs': 1_000_000,      # Number of training epochs
+    'epochs': 1_000,      # Number of training epochs
     'batch_size': 32,   # Batch size for training
-    'learning_rate': 0.05, # Learning rate for the optimizer
+    'learning_rate': 0.002, # Learning rate for the optimizer
     'validation_split': 0.2, # Fraction of data for validation
-    'patience': 300,     # Early stopping patience
+    'patience': 20,     # Early stopping patience
     'lr_scheduler_factor':  0.5, # factor by which the lr_scheduler changes the learning rate
-    'lr_scheduler_patience': 20, # lr_scheduler patience before chanign learning rate
+    'lr_scheduler_patience': 10, # lr_scheduler patience before chanign learning rate
 }
 
 # --- Reinforcement Learning ---

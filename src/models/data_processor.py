@@ -315,7 +315,6 @@ class DataProcessor:
             # Clip to [0,1] and round to nearest integer (0 or 1)
             predicted_activities_flags[key] = int(round(np.clip(unscaled_features[idx], 0, 1))); idx += 1
 
-        # Determine 'NoActivity' based on whether any other activity was predicted as 1
         if any(predicted_activities_flags.values()):
             reconstructed_features['activity_type_flags']['NoActivity'] = 0
         else:
@@ -325,15 +324,10 @@ class DataProcessor:
         for key in activity_keys:
             reconstructed_features['activity_type_flags'][key] = predicted_activities_flags[key]
 
-
-        # Time features (reconstruct as strings if needed, or keep as numerical)
-        # Clip hours/minutes to their valid ranges
-        bed_hour = int(round(np.clip(unscaled_features[idx], 0, 23))); idx += 1
-        bed_minute = int(round(np.clip(unscaled_features[idx], 0, 59))); idx += 1
-        wake_hour = int(round(np.clip(unscaled_features[idx], 0, 23))); idx += 1
-        wake_minute = int(round(np.clip(unscaled_features[idx], 0, 59))); idx += 1
-
-        reconstructed_features['bed_time_gmt'] = f"{bed_hour:02d}:{bed_minute:02d}"
+        # Time features as numerical values
+        bed_hour, bed_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
+        wake_hour, wake_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
+        reconstructed_features['bed_time_gmt'] = f"{bed_hour:02d}:{bed_minute:02d}" # Example string representation
         reconstructed_features['wake_time_gmt'] = f"{wake_hour:02d}:{wake_minute:02d}"
 
         return reconstructed_features

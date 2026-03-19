@@ -6,7 +6,7 @@
 # --- Data Ingestion & Feature Engineering ---
 # Number of historical days to fetch from Garmin Connect.
 # Ensure this is at least NUM_DAYS_FOR_STATE + 1 for training data generation.
-NUM_DAYS_TO_FETCH_RAW = 425 
+NUM_DAYS_TO_FETCH_RAW = 200 
 
 # Number of past days to include in each state vector (X in the RL context).
 NUM_DAYS_FOR_STATE = 10 

@@ -49,6 +49,42 @@ class DataProcessor:
         self._is_scaler_fitted = False
         print(f"DataProcessor initialized. Total numerical features per day: {self.output_size}")
 
+    def create_state_vectors(self,historical_daily_features: List[Dict[str, Any]], num_days_in_state: int) -> List[Dict[str, Any]]:
+        """
+        Creates time-series state vectors from historical daily features.
+        Each state vector represents 'num_days_in_state' consecutive days of features.
+
+        Args:
+            historical_daily_features (List[Dict[str, Any]]): A list of standardized daily feature dictionaries,
+                                                            sorted from oldest to newest.
+            num_days_in_state (int): The number of past days to include in each state vector (your 'x').
+
+        Returns:
+            List[Dict[str, Any]]: A list of state vectors. Each state vector is a dictionary
+                                containing 'date_end' (the date of the last day in the sequence)
+                                and 'features' (a list of dictionaries, one for each day in the sequence).
+        """
+        state_vectors = []
+        if len(historical_daily_features) < num_days_in_state:
+            print(f"Warning: Not enough historical data ({len(historical_daily_features)} days) to create "
+                f"state vectors of {num_days_in_state} days. Skipping state vector creation.")
+            return []
+
+        for i in range(len(historical_daily_features) - num_days_in_state + 1):
+            # A state vector consists of 'num_days_in_state' consecutive days
+            current_state_sequence = historical_daily_features[i : i + num_days_in_state]
+
+            # The 'date_end' for the state vector is the date of the last day in the sequence
+            date_end = current_state_sequence[-1]['date']
+
+            # We'll include all extracted features for each day in the sequence
+            state_vectors.append({
+                'date_end': date_end,
+                'features': current_state_sequence
+            })
+
+        return state_vectors
+
     def _convert_timestamp_to_time_features(self, timestamp_gmt: str) -> Tuple[int, int]:
         """
         Converts a GMT timestamp string (e.g., '1751235180000') to (hour, minute).

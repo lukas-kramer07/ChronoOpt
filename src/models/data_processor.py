@@ -214,7 +214,7 @@ class DataProcessor:
         Returns:
             Tuple[np.ndarray, np.ndarray]:
                 X (np.ndarray): Input sequences. Shape (num_samples, num_days_in_state, num_features_per_day).
-                y (np.ndarray): Target features for the next day. Shape (num_samples, num_features_per_day).
+                y (np.ndarray): Model-predicted target features for the next day. Shape (num_samples, 12).
         """
         X_flat_unscaled, y_flat_unscaled = [], []
 
@@ -232,7 +232,7 @@ class DataProcessor:
             # Target (next day's features)
             next_day_features_dict = historical_daily_features[i + num_days_in_state]
             next_day_features_flat = self.flatten_features_for_day(next_day_features_dict)
-            y_flat_unscaled.append(next_day_features_flat)
+            y_flat_unscaled.append(next_day_features_flat[len(self.agent_feature_keys):])
 
         X_np_unscaled = np.array(X_flat_unscaled, dtype=np.float32)
         y_np_unscaled = np.array(y_flat_unscaled, dtype=np.float32)
@@ -242,106 +242,77 @@ class DataProcessor:
         # We fit on X_np_unscaled because it represents the input space.
         # The features in y_np_unscaled are the same type of features, just shifted.
         if X_np_unscaled.size > 0:
-            self.fit_scaler(X_np_unscaled)
+            self.fit_scaler(X_np_unscaled,y_np_unscaled)
 
             # Transform both X and y using the fitted scaler
-            X_scaled = self.transform_data(X_np_unscaled)
-            y_scaled = self.transform_data(y_np_unscaled) # Apply same scaling to targets
+            X_scaled = self.transform_X(X_np_unscaled)
+            y_scaled = self.transform_y(y_np_unscaled)
             print("Data scaled successfully.")
             return X_scaled, y_scaled
         else:
             return X_np_unscaled, y_np_unscaled # Return empty if no data
 
-    def reconstruct_features_from_flat(self, flat_features: np.ndarray, date_str: str = "N/A") -> Dict[str, Any]:
+    def reconstruct_features_from_flat(self, flat_features: np.ndarray,
+                                    date_str: str = "N/A") -> Dict[str, Any]:
         """
-        Reconstructs a structured feature dictionary from a flat numerical NumPy array.
-        This is useful for converting model predictions back into a readable format.
-        Applies inverse scaling before reconstruction.
+        Reconstructs a structured feature dictionary from a flat numerical array.
+        Automatically detects scope based on input length:
+            - 12 features → model-only reconstruction (LSTM output), uses scaler_y
+            - 23 features → full reconstruction (agent + model), uses scaler_X
 
         Args:
-            flat_features (np.ndarray): A 1D NumPy array of numerical features (scaled).
-            date_str (str): The date string to assign to the reconstructed features.
+            flat_features (np.ndarray): 1D array of length 12 or 23.
+            date_str (str): Date string. Only populated in the 23-feature case.
 
         Returns:
-            Dict[str, Any]: A structured dictionary of features.
+            Dict[str, Any]: Structured feature dictionary.
         """
-        if not self._is_scaler_fitted:
-            print("Error: Scaler not fitted. Cannot inverse transform for reconstruction. Returning unscaled.")
-            # If scaler not fitted, assume input is unscaled and proceed
-            unscaled_features = flat_features.copy()
+        n = len(flat_features)
+
+        if n == self.output_size:  # 12 features — model output only
+            if self._is_scaler_fitted:
+                unscaled = self.inverse_transform_y(flat_features.reshape(1, -1))[0]
+            else:
+                unscaled = flat_features.copy()
+            idx = 0
+
+        elif n == self.input_size:  # 23 features — full vector
+            if self._is_scaler_fitted:
+                unscaled = self.inverse_transform_X(flat_features.reshape(1, -1))[0]
+            else:
+                unscaled = flat_features.copy()
+            idx = len(self.agent_feature_keys)  # Model features start at index 11
+
         else:
-            # Inverse transform the flat features before reconstructing
-            # Need to reshape 1D array to 2D (1 sample, num_features) for inverse_transform
-            unscaled_features = self.inverse_transform_data(flat_features.reshape(1, -1))[0] # Get the first (and only) row
+            raise ValueError(f"Unexpected input length: {n}. Expected {self.output_size} or {self.input_size}.")
 
-        reconstructed_features = {
-            'date': date_str,
-            'total_steps': 0,
-            'avg_heart_rate': 0.0,
-            'resting_heart_rate': 0.0,
-            'avg_respiration_rate': 0.0,
-            'avg_stress': 0.0,
-            'body_battery_end_value': 0.0,
-            'activity_type_flags': {
-                'Strength': 0, 'Cardio': 0, 'Yoga': 0, 'Stretching': 0,
-                'OtherActivity': 0, 'NoActivity': 0
-            },
-            'sleep_metrics': {
-                'total_sleep_seconds': 0.0, 'deep_sleep_seconds': 0.0,
-                'rem_sleep_seconds': 0.0, 'awake_sleep_seconds': 0.0,
-                'restless_moments_count': 0.0, 'avg_sleep_stress': 0.0,
-                'resting_heart_rate': 0.0
-            },
-            'wake_time_gmt': 'N/A',
-            'bed_time_gmt': 'N/A',
-        }
+        # --- Build model result dict (always present, indices 11-22 or 0-11) ---
+        result = {'date': date_str, 'sleep_metrics': {}}
+        result['avg_heart_rate'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['resting_heart_rate'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['avg_respiration_rate'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['avg_stress'] = float(np.clip(unscaled[idx], 0, 100)); idx += 1
+        result['body_battery_end_value'] = float(np.clip(unscaled[idx], 0, 100)); idx += 1
+        result['sleep_metrics']['total_sleep_seconds'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['sleep_metrics']['deep_sleep_seconds'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['sleep_metrics']['rem_sleep_seconds'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['sleep_metrics']['awake_sleep_seconds'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['sleep_metrics']['restless_moments_count'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
+        result['sleep_metrics']['avg_sleep_stress'] = float(np.clip(unscaled[idx], 0, 100)); idx += 1
+        result['sleep_metrics']['resting_heart_rate'] = float(np.clip(unscaled[idx], 0, None)); idx += 1
 
-        # Ensure the input array matches the expected size
-        if len(unscaled_features) != self.output_size:
-            print(f"Error: Flat features size mismatch. Expected {self.output_size}, got {len(unscaled_features)}.")
-            return reconstructed_features
+        # --- Append agent fields if full 23-feature reconstruction ---
+        if n == self.input_size:
+            agent_idx = 0
+            result['total_steps'] = int(round(np.clip(unscaled[agent_idx], 0, None))); agent_idx += 1
+            activity_keys = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity', 'NoActivity']
+            result['activity_type_flags'] = {}
+            for key in activity_keys:
+                result['activity_type_flags'][key] = int(round(np.clip(unscaled[agent_idx], 0, 1))); agent_idx += 1
+            result['bed_time_gmt'] = f"{int(unscaled[agent_idx]):02d}:{int(unscaled[agent_idx+1]):02d}"; agent_idx += 2
+            result['wake_time_gmt'] = f"{int(unscaled[agent_idx]):02d}:{int(unscaled[agent_idx+1]):02d}"
 
-        # Map flat features back to structured dictionary
-        idx = 0
-        reconstructed_features['total_steps'] = int(round(np.clip(unscaled_features[idx], 0, None))); idx += 1 # Clip at 0 for steps
-        reconstructed_features['avg_heart_rate'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['resting_heart_rate'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['avg_respiration_rate'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['avg_stress'] = float(np.clip(unscaled_features[idx], 0, 100)); idx += 1 # Stress 0-100
-        reconstructed_features['body_battery_end_value'] = float(np.clip(unscaled_features[idx], 0, 100)); idx += 1 # Body Battery 0-100
-
-        # Sleep Metrics
-        reconstructed_features['sleep_metrics']['total_sleep_seconds'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['sleep_metrics']['deep_sleep_seconds'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['sleep_metrics']['rem_sleep_seconds'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['sleep_metrics']['awake_sleep_seconds'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['sleep_metrics']['restless_moments_count'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-        reconstructed_features['sleep_metrics']['avg_sleep_stress'] = float(np.clip(unscaled_features[idx], 0, 100)); idx += 1 # Sleep Stress 0-100
-        reconstructed_features['sleep_metrics']['resting_heart_rate'] = float(np.clip(unscaled_features[idx], 0, None)); idx += 1
-
-        # Activity Type Flags
-        activity_keys = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity'] # Exclude NoActivity for direct prediction
-        predicted_activities_flags = {}
-        for key in activity_keys:
-            # Clip to [0,1] and round to nearest integer (0 or 1)
-            predicted_activities_flags[key] = int(round(np.clip(unscaled_features[idx], 0, 1))); idx += 1
-
-        if any(predicted_activities_flags.values()):
-            reconstructed_features['activity_type_flags']['NoActivity'] = 0
-        else:
-            reconstructed_features['activity_type_flags']['NoActivity'] = 1
-
-        # Assign the predicted specific activities
-        for key in activity_keys:
-            reconstructed_features['activity_type_flags'][key] = predicted_activities_flags[key]
-
-        # Time features as numerical values
-        bed_hour, bed_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
-        wake_hour, wake_minute = int(flat_features[idx]), int(flat_features[idx+1]); idx += 2
-        reconstructed_features['bed_time_gmt'] = f"{bed_hour:02d}:{bed_minute:02d}" # Example string representation
-        reconstructed_features['wake_time_gmt'] = f"{wake_hour:02d}:{wake_minute:02d}"
-
-        return reconstructed_features
+        return result
 
 # Example usage (for internal testing of DataProcessor)
 if __name__ == "__main__":
@@ -381,51 +352,14 @@ if __name__ == "__main__":
             reconstructed_target = processor.reconstruct_features_from_flat(y_train_np[0, :], date_str="Predicted Date")
             print(reconstructed_target)
 
-            # Verify the number of features matches the expected output_size
-            print(f"\nNumber of features per day (expected by model): {processor.output_size}")
-            if X_train_np.shape[2] == processor.output_size:
-                print("Feature count matches DataProcessor's expected output_size. Good to go!")
+           # Verify feature counts
+            print(f"\nInput features per day (LSTM input): {processor.input_size}")
+            print(f"Output features per day (LSTM output): {processor.output_size}")
+            if X_train_np.shape[2] == processor.input_size and y_train_np.shape[1] == processor.output_size:
+                print("Feature counts correct. X has 23, y has 12. Good to go!")
             else:
-                print("ERROR: Feature count mismatch. Check DataProcessor's numerical_feature_keys.")
+                print(f"ERROR: Feature count mismatch. X shape: {X_train_np.shape}, y shape: {y_train_np.shape}")
         else:
             print("Not enough data to create training samples. Check NUM_DAYS_TO_FETCH_RAW and NUM_DAYS_FOR_STATE.")
     else:
         print("No raw historical data fetched. Cannot proceed with data preparation.")
-
-""" I don't think I need this sooo
-    def create_state_vectors(self,historical_daily_features: List[Dict[str, Any]], num_days_in_state: int) -> List[Dict[str, Any]]:
-        \"""
-        Creates time-series state vectors from historical daily features.
-        Each state vector represents 'num_days_in_state' consecutive days of features.
-
-        Args:
-            historical_daily_features (List[Dict[str, Any]]): A list of standardized daily feature dictionaries,
-                                                            sorted from oldest to newest.
-            num_days_in_state (int): The number of past days to include in each state vector (your 'x').
-
-        Returns:
-            List[Dict[str, Any]]: A list of state vectors. Each state vector is a dictionary
-                                containing 'date_end' (the date of the last day in the sequence)
-                                and 'features' (a list of dictionaries, one for each day in the sequence).
-        \"""
-        state_vectors = []
-        if len(historical_daily_features) < num_days_in_state:
-            print(f"Warning: Not enough historical data ({len(historical_daily_features)} days) to create "
-                f"state vectors of {num_days_in_state} days. Skipping state vector creation.")
-            return []
-
-        for i in range(len(historical_daily_features) - num_days_in_state + 1):
-            # A state vector consists of 'num_days_in_state' consecutive days
-            current_state_sequence = historical_daily_features[i : i + num_days_in_state]
-
-            # The 'date_end' for the state vector is the date of the last day in the sequence
-            date_end = current_state_sequence[-1]['date']
-
-            # We'll include all extracted features for each day in the sequence
-            state_vectors.append({
-                'date_end': date_end,
-                'features': current_state_sequence
-            })
-
-        return state_vectors
-"""

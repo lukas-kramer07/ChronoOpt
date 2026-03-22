@@ -43,13 +43,9 @@ class PredictionModel(nn.Module):
         self.device = device # Store the device for easy access within the model
 
         # Define the LSTM layer
-        # Added dropout to LSTM if num_layers > 1 (standard practice)
+        # Added dropout to LSTM if num_layers > 1
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate if num_layers > 1 else 0)
-
-        # Dropout layer after LSTM output (applied before the final FC layer)
         self.dropout = nn.Dropout(dropout_rate)
-
-        # Define the fully connected layer to map LSTM output to desired output size
         self.fc = nn.Linear(hidden_size, output_size)
 
         # Move the entire model to the selected device (CPU or GPU)

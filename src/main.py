@@ -6,7 +6,7 @@
 import numpy as np
 import torch
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import matplotlib.pyplot as plt # Import matplotlib for plotting
 from typing import List,Dict,Any
 
@@ -110,7 +110,7 @@ def run_prediction_pipeline():
 
     # --- 1. Data Ingestion ---
     print(f"\nCollecting historical data for the last {config.NUM_DAYS_TO_FETCH_RAW} days...")
-    raw_historical_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW)
+    raw_historical_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW, end_date=date(2025,12,24))
 
     if not raw_historical_data:
         print("Error: No raw historical data fetched. Exiting pipeline.")
@@ -141,8 +141,8 @@ def run_prediction_pipeline():
     print(f"Data prepared: X_data shape {X_data.shape}, y_data shape {y_data.shape}")
 
     # Dynamically set input_size and output_size for the model
-    model_input_size = data_processor.output_size # Number of features per day
-    model_output_size = data_processor.output_size # Predicting all features for the next day
+    model_input_size = data_processor.input_size    
+    model_output_size = data_processor.output_size 
 
     # Update model hyperparameters with dynamically determined sizes
     model_params = config.MODEL_HYPERPARAMETERS.copy()
@@ -179,7 +179,7 @@ def run_prediction_pipeline():
 
     if X_test_scaled.shape[0] > 0:
         # Pass the feature names from the data_processor for MAE calculation
-        evaluation_metrics = model.evaluate_model(X_test_scaled, y_test_scaled, data_processor.numerical_feature_keys)
+        evaluation_metrics = model.evaluate_model(X_test_scaled, y_test_scaled, data_processor.model_feature_keys)
         print(f"Prediction Model Evaluation Results: Overall MSE: {evaluation_metrics['overall_mse']:.4f}")
         # Individual MAEs are printed within evaluate_model function
     else:
@@ -202,11 +202,9 @@ def run_prediction_pipeline():
             predicted_flat_features_scaled[0], date_str=predicted_date
         )
         print(f"Predicted features for {predicted_date}:")
-        print(f"  Total Steps: {predicted_structured_features['total_steps']:.0f}")
         print(f"  Avg HR: {predicted_structured_features['avg_heart_rate']:.1f}")
         print(f"  Avg Stress: {predicted_structured_features['avg_stress']:.1f}")
         print(f"  Body Battery End: {predicted_structured_features['body_battery_end_value']:.1f}")
-        print(f"  Activities: {predicted_structured_features['activity_type_flags']}")
         print(f"  Sleep Metrics: {predicted_structured_features['sleep_metrics']}")
 
         # Calculate the sleep score proxy from the predicted sleep metrics

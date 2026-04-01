@@ -56,9 +56,11 @@ class ChronoOptEnv:
         self.model.eval() # Set model to evaluation mode
         self.processor = processor
 
-        # The state is a queue or a fixed-length array of past daily feature vectors.
-        # We use a deque or a similar structure to efficiently manage the state history.
-        self.history = initial_state_data.tolist() # Convert to list for easy appending/popping
+        # The state is a list or a fixed-length array of past daily feature vectors.
+        self.initial_state_data = initial_state_data.copy()
+        self.history = initial_state_data.tolist()
+        self.current_step = 0
+        self.max_steps = 30  # Episode length — 30 simulated days
 
         # Total features for one day = 11 (agent-controlled) + 12 (model-predicted) = 23
         self.num_total_features = 23
@@ -101,12 +103,11 @@ class ChronoOptEnv:
 
         Returns:
             Tuple[np.ndarray, Dict[str, Any]]:
-                observation (np.ndarray): The initial observation for the agent.
-                info (Dict[str, Any]): Additional info about the state.
+                observation (np.ndarray): Initial state history. Shape: (sequence_length, 23).
+                info (Dict[str, Any]): Additional info.
         """
-        # TODO: Implement reset logic, e.g., re-initialize history
         self.history = self.initial_state_data.tolist()
-        # Get the current observation (the last N days from the history)
+        self.current_step = 0
         observation = np.array(self.history, dtype=np.float32)
         info = {"message": "Environment reset."}
         return observation, info

@@ -114,15 +114,83 @@ class ChronoOptEnv:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """
-        Performs one step in the environment given a vector of actions.
+        Performs one step in the environment given a vector of agent actions.
 
         Args:
-            action (np.ndarray): A 1D NumPy array representing the agent's
-                                 chosen values for the 11 agent-controlled features.
-                                 Shape: (11,).
+            action (np.ndarray): 1D array of 11 agent-controlled features in
+                                UNSCALED human-readable values.
+                                Order matches processor.agent_feature_keys:
+                                [total_steps, act_Strength, act_Cardio, act_Yoga,
+                                act_Stretching, act_OtherActivity, act_NoActivity,
+                                bed_hour, bed_minute, wake_hour, wake_minute]
 
-       """
-        pass
+        Returns:
+            Tuple:
+                observation (np.ndarray): Updated state history. Shape: (sequence_length, 23).
+                reward (float): Sleep score proxy (0-100).
+                done (bool): True if episode has ended (max_steps reached).
+                truncated (bool): Always False for now.
+                info (Dict[str, Any]): Debug info including predicted metrics and reward.
+        """
+        # --- 1. Build the current state tensor for LSTM input ---
+        # history is a list of unscaled 23-feature vectors
+        state_array = np.array(self.history, dtype=np.float32)  # (seq_len, 23)
+
+        # Scale the state for LSTM input using scaler_X
+        state_scaled = self.processor.transform_X(
+            state_array.reshape(1, len(self.history), self.num_total_features)
+        )  # (1, seq_len, 23)
+
+        # --- 2. Run LSTM to get predicted model features (12) ---
+        with torch.no_grad():
+            state_tensor = torch.tensor(state_scaled, dtype=torch.float32).to(self.device)
+            predicted_model_scaled = self.model(state_tensor)  # (1, 12)
+
+        # --- 3. Inverse transform model predictions to unscaled values ---
+        predicted_model_unscaled = self.processor.inverse_transform_y(
+            predicted_model_scaled.cpu().numpy()
+        )[0]  # (12,)
+
+        # --- 4. Build the new full 23-feature day vector (unscaled) ---
+        # agent features first (0-10), model features second (11-22)
+        new_day_unscaled = np.concatenate([
+            action.astype(np.float32),           # 11 agent features
+            predicted_model_unscaled.astype(np.float32)  # 12 model features
+        ])  # (23,)
+
+        # --- 5. Compute reward from predicted sleep metrics ---
+        # Reconstruct model features into a dict for sleep score calculation
+        predicted_features_dict = self.processor.reconstruct_features_from_flat(
+            predicted_model_unscaled  # 12 features — auto-detected
+        )
+        reward = float(self._calculate_reward(
+            torch.tensor(predicted_model_unscaled)
+        ))
+
+        # --- 6. Update state history ---
+        # Drop oldest day, append new day (unscaled)
+        self.history.pop(0)
+        self.history.append(new_day_unscaled.tolist())
+
+        # --- 7. Build next observation (scaled) ---
+        next_state_array = np.array(self.history, dtype=np.float32)
+        next_observation = self.processor.transform_X(
+            next_state_array.reshape(1, len(self.history), self.num_total_features)
+        )[0]  # (seq_len, 23)
+
+        # --- 8. Check termination ---
+        self.current_step += 1
+        done = self.current_step >= self.max_steps
+        truncated = False
+
+        info = {
+            "step": self.current_step,
+            "reward": reward,
+            "predicted_sleep_score": reward,
+            "predicted_model_features": predicted_features_dict,
+        }
+
+        return next_observation, reward, done, truncated, info
 
     def _calculate_reward(self, predicted_metrics: torch.Tensor) -> float:
         """
@@ -135,5 +203,5 @@ class ChronoOptEnv:
         Returns:
             float: The calculated reward value.
         """
-        metrics_dict = {k:v for k,v in zip(self.model_features, predicted_metrics.detach().cpu().numpy().flatten())}
+        metrics_dict = dict(zip(self.model_features, predicted_metrics.detach().cpu().numpy().flatten()))
         return calculate_sleep_score_proxy(metrics_dict) #the feature names are consistent

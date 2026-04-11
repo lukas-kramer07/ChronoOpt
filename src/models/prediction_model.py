@@ -260,7 +260,32 @@ class PredictionModel(nn.Module):
         torch.save(checkpoint, path)
         print(f"Model saved to {path}")
 
+    @classmethod
+    def load(cls, path: str, device: torch.device) -> 'PredictionModel':
+        """
+        Loads a PredictionModel from a checkpoint file.
 
+        Args:
+            path (str): Path to the saved checkpoint.
+            device (torch.device): Device to load the model onto.
+
+        Returns:
+            PredictionModel: Reconstructed model in eval mode.
+        """
+        checkpoint = torch.load(path, map_location=device)
+        meta = checkpoint['metadata']
+        model = cls(
+            input_size=meta['input_size'],
+            hidden_size=meta['hidden_size'],
+            output_size=meta['output_size'],
+            num_layers=meta['num_layers'],
+            dropout_rate=meta['dropout_rate'],
+        )
+        model.load_state_dict(checkpoint['state_dict'])
+        model.to(device)
+        model.eval()
+        print(f"Model loaded from {path}")
+        return model
 
 # Example usage (for internal testing of the PyTorch model)
 if __name__ == "__main__":

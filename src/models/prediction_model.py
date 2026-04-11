@@ -165,7 +165,7 @@ class PredictionModel(nn.Module):
             scheduler.step(val_loss)
 
             # Print progress
-            if (epoch + 1) % 10 == 0 or epoch == 0: # Print first epoch and every 10th
+            if (epoch + 1) % 2 == 0 or epoch == 0: # Print first epoch and every 10th
                 print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, LR: {optimizer.param_groups[0]["lr"]:.6f}')
 
             # Early Stopping
@@ -237,6 +237,30 @@ class PredictionModel(nn.Module):
                 print(f"  {feature}: {mae_val:.4f}")
 
             return {"overall_mse": mse, **per_feature_mae}
+        
+    def save(self, path: str):
+        """
+        Saves model weights and architecture metadata to disk.
+
+        Args:
+            path (str): File path to save the model (e.g. 'src/models/saved_models/lstm_chronoopt.pt').
+        """
+        import os
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        checkpoint = {
+            'state_dict': self.state_dict(),
+            'metadata': {
+                'input_size': self.lstm.input_size,
+                'hidden_size': self.hidden_size,
+                'output_size': self.fc.out_features,
+                'num_layers': self.num_layers,
+                'dropout_rate': self.dropout.p,
+            }
+        }
+        torch.save(checkpoint, path)
+        print(f"Model saved to {path}")
+
+
 
 # Example usage (for internal testing of the PyTorch model)
 if __name__ == "__main__":

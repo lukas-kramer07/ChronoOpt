@@ -173,7 +173,7 @@ class PredictionModel(nn.Module):
                 best_val_loss = val_loss
                 epochs_no_improve = 0
                 # Optionally save the best model weights
-                # torch.save(self.state_dict(), 'best_model.pth')
+                torch.save(self.state_dict(), 'best_model.pth')
             else:
                 epochs_no_improve += 1
                 if epochs_no_improve == patience:

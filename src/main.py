@@ -15,7 +15,7 @@ from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.features.feature_engineer import extract_daily_features
 from src.models.data_processor import DataProcessor
 from src.models.prediction_model import PredictionModel
-from src import config # Our configuration file
+from src import config 
 from src.features.utils import calculate_sleep_score_proxy # For calculating reward later
 
 def plot_predictions(historical_features_dicts: List[Dict[str, Any]],
@@ -33,7 +33,6 @@ def plot_predictions(historical_features_dicts: List[Dict[str, Any]],
 
     # Select 5 different features to plot for clarity
     plot_keys = [
-        'total_steps',
         'avg_heart_rate',
         'avg_stress',
         'body_battery_end_value',
@@ -85,7 +84,7 @@ def plot_predictions(historical_features_dicts: List[Dict[str, Any]],
         ax = axes[i]
         ax.plot(x_indices[:num_days_for_state], historical_values[key][:num_days_for_state], marker='o', linestyle='-', color='blue', label='Historical Actual')
         ax.plot(x_indices[num_days_for_state], historical_values[key][num_days_for_state], marker='o', color='green', markersize=8, label='Actual Next Day')
-        ax.plot(x_indices[-1], predicted_values[key], marker='x', color='red', markersize=10, label='Predicted Next Day')
+        ax.plot(x_indices[num_days_for_state], predicted_values[key], marker='x', color='red', markersize=10, label='Predicted Next Day')
 
         ax.set_title(f'{key.replace("_", " ").title()}')
         ax.set_ylabel('Value')
@@ -110,7 +109,9 @@ def run_prediction_pipeline():
 
     # --- 1. Data Ingestion ---
     print(f"\nCollecting historical data for the last {config.NUM_DAYS_TO_FETCH_RAW} days...")
-    raw_historical_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW, end_date=date(2025,12,24))
+    training_end_date = date.fromisoformat(config.LSTM_TRAINING_END_DATE)
+    raw_historical_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW, end_date=training_end_date)
+
 
     if not raw_historical_data:
         print("Error: No raw historical data fetched. Exiting pipeline.")
@@ -170,6 +171,8 @@ def run_prediction_pipeline():
         lr_scheduler_factor=model_params['lr_scheduler_factor'],
         lr_scheduler_patience=model_params['lr_scheduler_patience']
     )
+    #save model
+    model.save(config.LSTM_MODEL_SAVE_PATH)
 
     # --- 6. Model Evaluation (on a subset of the data, typically the validation split) ---
     print("\nEvaluating Prediction Model...")

@@ -124,8 +124,8 @@ Circadian Rhythm Optimization System – Roadmap
    - Implement fallback for self-reported data
 
 6. Action Space Definition & Constraints  
-   - Finalize agent actions, including real-life constraints  
-   - Simulate action effects on state transitions
+   - Finalize agent actions, including real-life constraints [DONE]
+   - Simulate action effects on state transitions [DONE]
 
 7. Reinforcement Learning Agent  
    - Train general policy on aggregated/simulated data  

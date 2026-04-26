@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Tuple
+import os
  
 # Activity flag order — must match data_processor.agent_feature_keys
 ACTIVITY_KEYS = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity', 'NoActivity']
@@ -53,8 +54,8 @@ class PolicyNetwork(nn.Module):
  
     def __init__(self,
                  input_size: int,
-                 hidden_size: int = 256,
-                 num_hidden_layers: int = 2,
+                 hidden_size: int = 128,
+                 num_hidden_layers: int = 1,
                  dropout_rate: float = 0.1):
         """
         Args:
@@ -66,14 +67,15 @@ class PolicyNetwork(nn.Module):
         super(PolicyNetwork, self).__init__()
  
         self.input_size = input_size
- 
+        self.hidden_size = hidden_size
+        self.num_hidden_layers=num_hidden_layers
+        self.dropout_rate = dropout_rate
         # --- Shared trunk ---
         trunk_layers = []
         in_features = input_size
         for _ in range(num_hidden_layers):
             trunk_layers.append(nn.Linear(in_features, hidden_size))
-            trunk_layers.append(nn.ReLU())
-            trunk_layers.append(nn.Dropout(dropout_rate))
+            trunk_layers.append(nn.Tanh())  # Tanh: gradient everywhere, no dead neurons
             in_features = hidden_size
         self.trunk = nn.Sequential(*trunk_layers)
  
@@ -82,16 +84,19 @@ class PolicyNetwork(nn.Module):
         # Activation: sigmoid — we scale to realistic ranges post-hoc
         self.continuous_head = nn.Sequential(
             nn.Linear(hidden_size, hidden_size // 2),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_size // 2, 5),
             nn.Sigmoid()  # Output in [0, 1] — scaled to real ranges in decode_action()
         )
- 
+        
+        nn.init.uniform_(self.continuous_head[-2].weight, -0.1, 0.1)
+        nn.init.constant_(self.continuous_head[-2].bias, 0.0)
+
         # --- Activity head (6 outputs) ---
         # Softmax enforces mutual exclusivity across activity types
         self.activity_head = nn.Sequential(
             nn.Linear(hidden_size, hidden_size // 2),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_size // 2, 6)
             # No activation — softmax applied in forward()
         )
@@ -208,13 +213,13 @@ class PolicyNetwork(nn.Module):
         continuous_out, activity_probs = self.forward(x)
 
         # --- Continuous log prob (Normal distribution, fixed std) ---
-        std = torch.full_like(continuous_out, 0.1)
+        std = torch.full_like(continuous_out, 0.2)
         dist_continuous = torch.distributions.Normal(continuous_out, std)
 
         if deterministic:
             continuous_sample = continuous_out
         else:
-            continuous_sample = dist_continuous.rsample()
+            continuous_sample = dist_continuous.sample()
 
         log_prob_continuous = dist_continuous.log_prob(continuous_sample).sum(dim=-1) # scalar
 
@@ -233,10 +238,54 @@ class PolicyNetwork(nn.Module):
 
         # --- Decode to unscaled action ---
         action = self.decode_action(continuous_sample, activity_probs, deterministic)
-
         return action, log_prob
- 
- 
+    
+    def save(self, path: str):
+        """
+        Saves policy network weights and architecture metadata to disk.
+
+        Args:
+            path (str): File path to save the checkpoint.
+        """
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        checkpoint = {
+            'state_dict': self.state_dict(),
+            'metadata': {
+                'input_size': self.input_size,
+                'hidden_size': self.hidden_size,
+                'num_hidden_layers': self.num_hidden_layers,
+                'dropout_rate': self.dropout_rate,
+            }
+        }
+        torch.save(checkpoint, path)
+        print(f"Policy saved to {path}")
+
+    @classmethod
+    def load(cls, path: str, device: torch.device) -> 'PolicyNetwork':
+        """
+        Loads a PolicyNetwork from a checkpoint file.
+
+        Args:
+            path (str): Path to the saved checkpoint.
+            device (torch.device): Device to load onto.
+
+        Returns:
+            PolicyNetwork: Reconstructed network ready for inference.
+        """
+        checkpoint = torch.load(path, map_location=device)
+        meta = checkpoint['metadata']
+        net = cls(
+            input_size=meta['input_size'],
+            hidden_size=meta['hidden_size'],
+            num_hidden_layers=meta['num_hidden_layers'],
+            dropout_rate=meta['dropout_rate'],
+        )
+        net.load_state_dict(checkpoint['state_dict'])
+        net.to(device)
+        print(f"Policy loaded from {path}")
+        return net
+
+
 if __name__ == "__main__":
     import torch
     import numpy as np

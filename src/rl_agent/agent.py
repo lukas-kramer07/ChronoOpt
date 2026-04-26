@@ -54,7 +54,9 @@ class ReinforceAgent:
         Returns:
             np.ndarray: Unscaled action vector, shape (11,).
         """
+        self.policy.eval()
         action, log_prob = self.policy.get_action(observation, self.device, deterministic=False)
+        self.policy.train()
         self._episode_log_probs.append(log_prob)
         return action
 
@@ -87,9 +89,8 @@ class ReinforceAgent:
             returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
 
         # --- Compute loss ---
-        loss = torch.tensor(0.0, requires_grad=True).to(self.device)
-        for log_prob, G_t in zip(self._episode_log_probs, returns_tensor):
-            loss = loss + (-log_prob * G_t)
+        loss = sum(-log_prob * G_t 
+                   for log_prob, G_t in zip(self._episode_log_probs, returns_tensor))
 
         # --- Backprop ---
         self.optimizer.zero_grad()
@@ -140,7 +141,7 @@ class ReinforceAgent:
 
                 if done:
                     break
-
+            maximum,minimum = max(self._episode_rewards),min(self._episode_rewards)
             loss = self.update_policy()
             episode_rewards.append(total_reward)
 
@@ -149,7 +150,8 @@ class ReinforceAgent:
                 print(f"Episode {episode:4d} | "
                       f"Total Reward: {total_reward:7.2f} | "
                       f"Avg({log_interval}): {avg_reward:7.2f} | "
-                      f"Loss: {loss:8.4f}")
+                      f"Loss: {loss:8.4f} | "
+                      f"Max_Reward: {maximum} | Min_Reward: {minimum}")
 
         return episode_rewards
 

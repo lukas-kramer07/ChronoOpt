@@ -1,7 +1,8 @@
-# src/main.py
+# src/models/train_pred_model.py
 # This is the main orchestration script for the ChronoOpt system.
 # It handles data ingestion, feature engineering, and training/evaluation
 # of the prediction model.
+# Run from project root: python3 -m src.models.train_pred_model
 
 import numpy as np
 import torch

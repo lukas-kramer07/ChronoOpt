@@ -99,6 +99,11 @@ class ChronoOptEnv:
     def reset(self) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Resets the environment to its initial state with targeted perturbation.
+        
+        Returns:
+            Tuple[np.ndarray, Dict[str, Any]]:
+                observation (np.ndarray): Initial state history. Shape: (sequence_length, 23).
+                info (Dict[str, Any]): Additional info.
         """
         # Copy to avoid mutating the original reference
         perturbed = self.initial_state_data.copy()
@@ -107,9 +112,9 @@ class ChronoOptEnv:
         # Define scale for the 11 agent-controlled features only
         # Indices: 0=steps, 1-6=activity, 7-10=time
         noise_scale = np.array([
-            5000,               # total_steps
+            2000,               # total_steps
             0, 0, 0, 0, 0, 0,   # activity flags (no perturbation)
-            3, 30, 2, 30        # bed_h, bed_m, wake_h, wake_m
+            1, 30, 1, 30        # bed_h, bed_m, wake_h, wake_m
         ], dtype=np.float32)
 
         # 1. Generate noise for the specific (days, agent_features) shape
@@ -225,8 +230,17 @@ class ChronoOptEnv:
         Returns:
             float: The calculated reward value.
         """
+        # 1. Get the raw human-readable score (0-100)
         metrics_dict = dict(zip(self.model_features, predicted_metrics.detach().cpu().numpy().flatten()))
-        return calculate_sleep_score_proxy(metrics_dict) #the feature names are consistent
+        raw_score = calculate_sleep_score_proxy(metrics_dict)
+        
+        # 2. Apply Power Law: Reward = (Score/100)^k * 100
+        # k=2.0 (Square) is a standard starting point. 
+        # k=3.0 (Cube) is for "Elite-only" optimization.
+        k = 2.0 
+        hardened_reward = ((raw_score / 100.0) ** k) * 100.0
+        
+        return float(hardened_reward)
 
     def _predict_next_state(self, scaled_history: np.ndarray) -> np.ndarray:
         """

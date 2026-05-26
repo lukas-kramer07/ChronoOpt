@@ -98,26 +98,49 @@ class ChronoOptEnv:
         
     def reset(self) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
-        Resets the environment to its initial state.
-
-        Returns:
-            Tuple[np.ndarray, Dict[str, Any]]:
-                observation (np.ndarray): Initial state history. Shape: (sequence_length, 23).
-                info (Dict[str, Any]): Additional info.
+        Resets the environment to its initial state with targeted perturbation.
         """
-        self.history = self.initial_state_data.tolist()
-        self.current_step = 0
+        # Copy to avoid mutating the original reference
+        perturbed = self.initial_state_data.copy()
+        num_days = perturbed.shape[0]
+
+        # Define scale for the 11 agent-controlled features only
+        # Indices: 0=steps, 1-6=activity, 7-10=time
+        noise_scale = np.array([
+            5000,               # total_steps
+            0, 0, 0, 0, 0, 0,   # activity flags (no perturbation)
+            3, 30, 2, 30        # bed_h, bed_m, wake_h, wake_m
+        ], dtype=np.float32)
+
+        # 1. Generate noise for the specific (days, agent_features) shape
+        # shape will be (10, 11)
+        noise = np.random.randn(num_days, 11) * noise_scale
         
+        # 2. Apply noise only to the first 11 columns
+        perturbed[:, :11] += noise
+
+        # 3. Ensure logical bounds (e.g., hours stay in 0-23, minutes 0-59)
+        # Note: These are unscaled, so we handle them before the processor
+        perturbed[:, 0] = np.clip(perturbed[:, 0], 0, 40000)      # steps
+        perturbed[:, 7] = np.clip(perturbed[:, 7], 0, 23)         # bed_h
+        perturbed[:, 8] = np.clip(perturbed[:, 8], 0, 59)         # bed_m
+        perturbed[:, 9] = np.clip(perturbed[:, 9], 0, 23)         # wake_h
+        perturbed[:, 10] = np.clip(perturbed[:, 10], 0, 59)       # wake_m
+
+        self.history = perturbed.tolist()
+        self.current_step = 0
+
         state_array = np.array(self.history, dtype=np.float32)
+        
         if self.processor._is_scaler_fitted:
+            # Reshape for processor: (1, seq_len, features)
             observation = self.processor.transform_X(
-                state_array.reshape(1, len(self.history), self.num_total_features)
+                state_array.reshape(1, num_days, self.num_total_features)
             )[0]
         else:
             observation = state_array
-        
-        info = {"message": "Environment reset."}
-        return observation, info
+
+        return observation, {"message": "Environment reset with targeted noise."}
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """

@@ -1,4 +1,5 @@
 # src/rl_agent/agent.py
+# This is a deprecated model, REINFORCE does not work well with the introduced complexity 
 
 import torch
 import torch.optim as optim
@@ -55,7 +56,7 @@ class ReinforceAgent:
             np.ndarray: Unscaled action vector, shape (11,).
         """
         self.policy.eval()
-        action, log_prob = self.policy.get_action(observation, self.device, deterministic=False)
+        action, log_prob,_ = self.policy.get_action(observation, self.device, deterministic=False)
         self.policy.train()
         self._episode_log_probs.append(log_prob)
         return action

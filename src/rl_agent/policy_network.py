@@ -6,6 +6,7 @@
 #   - Continuous head (5 outputs): total_steps, bed_hour, bed_minute, wake_hour, wake_minute
 #   - Activity head (6 outputs): softmax over activity flags
 #     (Strength, Cardio, Yoga, Stretching, OtherActivity, NoActivity)
+#   - Value head (1 output): acts as critic necessary for ppo
 #
 # The two-head design is intentional:
 #   - Continuous features are unbounded and agent-decided
@@ -100,6 +101,13 @@ class PolicyNetwork(nn.Module):
             nn.Linear(hidden_size // 2, 6)
             # No activation — softmax applied in forward()
         )
+
+        # --- Value head (critic) ---
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.Tanh(),
+            nn.Linear(hidden_size // 2, 1)
+        )
  
         print(f"PolicyNetwork initialized. Input size: {input_size}, Hidden size: {hidden_size}, "
               f"Layers: {num_hidden_layers}, Dropout: {dropout_rate}")
@@ -122,7 +130,8 @@ class PolicyNetwork(nn.Module):
         continuous_out = self.continuous_head(trunk_out)
         activity_logits = self.activity_head(trunk_out)
         activity_probs = F.softmax(activity_logits, dim=-1)
-        return continuous_out, activity_probs
+        value = self.value_head(trunk_out).squeeze(-1)
+        return continuous_out, activity_probs, value
  
     def decode_action(self,
                       continuous_out: torch.Tensor,
@@ -197,23 +206,18 @@ class PolicyNetwork(nn.Module):
  
         return action
  
-    def get_action(self, observation: np.ndarray, device: torch.device, deterministic: bool = False) -> tuple:
+    def get_action(self, observation: np.ndarray, device: torch.device,
+                   deterministic: bool = False) -> tuple:
         """
-        Gets an action and its log probability from the policy network.
-
-        Args:
-            observation (np.ndarray): Flattened observation array.
-            device (torch.device): Device to run on.
-            deterministic (bool): If True, returns deterministic action.
-
         Returns:
-            tuple: (action np.ndarray(11), log_prob scalar tensor)
+            tuple: (action np.ndarray(11), log_prob scalar tensor,
+                    value scalar tensor, continuous_sample tensor,
+                    activity_idx int)
         """
         x = torch.tensor(observation, dtype=torch.float32).flatten().unsqueeze(0).to(device)
-        continuous_out, activity_probs = self.forward(x)
+        continuous_out, activity_probs, value = self.forward(x)
 
-        # --- Continuous log prob (Normal distribution, fixed std) ---
-        std = torch.full_like(continuous_out, 0.2)
+        std = torch.full_like(continuous_out, 0.3)
         dist_continuous = torch.distributions.Normal(continuous_out, std)
 
         if deterministic:
@@ -221,24 +225,53 @@ class PolicyNetwork(nn.Module):
         else:
             continuous_sample = dist_continuous.sample()
 
-        log_prob_continuous = dist_continuous.log_prob(continuous_sample).sum(dim=-1) # scalar
+        log_prob_continuous = dist_continuous.log_prob(continuous_sample).sum(dim=-1)
 
-        # --- Activity log prob (Categorical) ---
         dist_activity = torch.distributions.Categorical(probs=activity_probs)
 
         if deterministic:
-            activity_sample = torch.argmax(activity_probs, dim=-1)
+            activity_idx = torch.argmax(activity_probs, dim=-1)
         else:
-            activity_sample = dist_activity.sample()
+            activity_idx = dist_activity.sample()
 
-        log_prob_activity = dist_activity.log_prob(activity_sample) # scalar
-
-        # --- Combined log prob ---
+        log_prob_activity = dist_activity.log_prob(activity_idx)
         log_prob = log_prob_continuous + log_prob_activity
 
-        # --- Decode to unscaled action ---
         action = self.decode_action(continuous_sample, activity_probs, deterministic)
-        return action, log_prob
+
+        return (action, log_prob, value.squeeze(),
+                continuous_sample.detach(), activity_idx.detach())
+
+    def evaluate_actions(self, observations: torch.Tensor,
+                         continuous_samples: torch.Tensor,
+                         activity_indices: torch.Tensor) -> tuple:
+        """
+        Recomputes log_probs, entropy, and values for stored rollout data
+        under the current (updated) policy. Used during PPO update.
+
+        Args:
+            observations:       (batch, input_size) scaled flattened obs
+            continuous_samples: (batch, 5) raw pre-decode continuous samples
+            activity_indices:   (batch,) activity index per step
+
+        Returns:
+            tuple: (log_probs (batch,), entropy (batch,), values (batch,))
+        """
+        continuous_out, activity_probs, values = self.forward(observations)
+
+        std = torch.full_like(continuous_out, 0.3)
+        dist_continuous = torch.distributions.Normal(continuous_out, std)
+        log_prob_continuous = dist_continuous.log_prob(continuous_samples).sum(dim=-1)
+        entropy_continuous = dist_continuous.entropy().sum(dim=-1)
+
+        dist_activity = torch.distributions.Categorical(probs=activity_probs)
+        log_prob_activity = dist_activity.log_prob(activity_indices)
+        entropy_activity = dist_activity.entropy()
+
+        log_probs = log_prob_continuous + log_prob_activity
+        entropy = entropy_continuous + 2*entropy_activity
+
+        return log_probs, entropy, values
     
     def save(self, path: str):
         """
@@ -300,11 +333,11 @@ if __name__ == "__main__":
 
     dummy_obs = np.random.randn(config.NUM_DAYS_FOR_STATE, 23).astype(np.float32)
 
-    stochastic_action, stochastic_logprob = net.get_action(dummy_obs, device, deterministic=False)
+    stochastic_action, stochastic_logprob,_ = net.get_action(dummy_obs, device, deterministic=False)
     print(f"Stochastic action: {stochastic_action}")
     print(f"Stochastic log_prob: {stochastic_logprob.item():.4f}")
 
-    deterministic_action, deterministic_logprob = net.get_action(dummy_obs, device, deterministic=True)
+    deterministic_action, deterministic_logprob,_ = net.get_action(dummy_obs, device, deterministic=True)
     print(f"Deterministic action: {deterministic_action}")
     print(f"Deterministic log_prob: {deterministic_logprob.item():.4f}")
 

@@ -18,28 +18,51 @@ LSTM_TRAINING_END_DATE = "2025-12-01"
 # These parameters are for the PyTorch PredictionModel (LSTM).
 MODEL_HYPERPARAMETERS = {
     'input_size': None, # This will be determined dynamically by DataProcessor.output_size
-    'hidden_size': 32,  # Number of features in the LSTM's hidden state
+    'hidden_size': 32,  #=
     'output_size': None, # This will be determined dynamically by DataProcessor.output_size
-    'num_layers': 1,    # Number of stacked LSTM layers
-    'epochs': 200,      # Number of training epochs
-    'batch_size': 64,   # Batch size for training
-    'learning_rate': 0.002, # Learning rate for the optimizer
-    'validation_split': 0.1, # Fraction of data for validation
-    'patience': 10,     # Early stopping patience
-    'lr_scheduler_factor':  0.5, # factor by which the lr_scheduler changes the learning rate
-    'lr_scheduler_patience': 10, # lr_scheduler patience before chanign learning rate
+    'num_layers': 1,   
+    'epochs': 200,      
+    'batch_size': 64,   
+    'learning_rate': 0.002, 
+    'validation_split': 0.1, 
+    'patience': 10,    
+    'lr_scheduler_factor':  0.5, 
+    'lr_scheduler_patience': 10, 
 }
 
 # --- Reinforcement Learning ---
+USE_DETERMINISTIC_ENV = True
+
 RL_AGENT_PARAMETERS = {
     'gamma': 0.99, # Discount factor
     'epsilon_start': 1.0,
     'epsilon_end': 0.01,
     'epsilon_decay': 0.995,
     'buffer_size': 10000,
-    'learning_rate': 0.0005,
+    'learning_rate': 0.0003,
     'target_update_frequency': 10,
 }
+
+PPO_HYPERPARAMETERS = {
+    'lr': 1.5e-5,
+    'gamma': 0.99,
+    'lam': 0.95,
+    'clip_eps': 0.2,
+    'c1': 0.5,
+    'c2': 0.01,
+    'n_steps': 2048,
+    'k_epochs': 4,
+    'batch_size': 64,
+    'max_grad_norm': 0.5,
+    'total_steps': 1_500_000,
+    'log_interval': 10,
+}
+
+POLICY_SAVE_PATH = "src/rl_agent/saved_policies/reinforce_policy.pt"
+
+RL_TRAIN_NUM_EPISODES = 500
+RL_TRAIN_MAX_STEPS = 5
+RL_TRAIN_LOG_INTERVAL = 10
 
 # --- Other Global Settings ---
 # Seed for reproducibility

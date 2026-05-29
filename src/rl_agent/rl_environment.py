@@ -248,12 +248,12 @@ class ChronoOptEnv:
         features (12,).
 
         Args:
-            scaled_history (np.ndarray): Scaled state history, shape (seq_len, 23).
+            scaled_history (np.ndarray): Scaled state history, shape (1,seq_len, 23).
 
         Returns:
             np.ndarray: Unscaled model-predicted features, shape (12,).
         """
-        input_tensor = torch.tensor(scaled_history, dtype=torch.float32).unsqueeze(0).to(self.device)
+        input_tensor = torch.tensor(scaled_history, dtype=torch.float32).to(self.device)
         with torch.no_grad():
             predicted_scaled = self.model(input_tensor).squeeze(0).cpu().numpy()
         return self.processor.inverse_transform_y(predicted_scaled.reshape(1, -1))[0]

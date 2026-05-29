@@ -227,7 +227,7 @@ class PPOAgent:
 
                 # PPO ratio
                 log_ratio = new_log_probs - batch['log_probs']
-                ratio = torch.exp(torch.clamp(log_ratio, min=-4.0, max=4.0))
+                ratio = torch.exp(torch.clamp(log_ratio, min=-10.0, max=10.0))
 
                 # Clipped surrogate loss
                 advantages = batch['advantages']

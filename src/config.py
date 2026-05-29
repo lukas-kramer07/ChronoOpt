@@ -49,12 +49,12 @@ PPO_HYPERPARAMETERS = {
     'lam': 0.95,
     'clip_eps': 0.2,
     'c1': 0.5,
-    'c2': 0.01,
+    'c2': 0.05,
     'n_steps': 2048,
     'k_epochs': 4,
     'batch_size': 64,
     'max_grad_norm': 0.5,
-    'total_steps': 1_500_000,
+    'total_steps': 3_500_000,
     'log_interval': 10,
 }
 

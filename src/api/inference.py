@@ -35,11 +35,6 @@ class ModelBundle:
     """
     All ML artifacts needed for inference, loaded once at startup and stored
     on app.state. Passed into endpoint functions via Depends(get_ml_models).
- 
-    Keeping everything in one object means:
-      - No globals, no hidden state
-      - Easy to construct a mock bundle in tests
-      - The dependency signature (ModelBundle) is self-documenting
     """
     lstm: PredictionModel
     processor: DataProcessor
@@ -59,10 +54,7 @@ class ModelBundle:
 def load_all_models() -> ModelBundle:
     """
     Loads the LSTM, fits the DataProcessor, and loads the trained policy.
-    Called once inside the FastAPI lifespan context — result stored on app.state.
- 
-    Returns a ModelBundle rather than mutating globals.
-    Reads from local JSON cache only — no Garmin API calls.
+    Called once inside the FastAPI lifespan context; result stored on app.state.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[inference] Device: {device}")
@@ -163,9 +155,6 @@ ACTIVITY_NAMES = ['Strength', 'Cardio', 'Yoga', 'Stretching', 'OtherActivity', '
 def get_recommendation(models: ModelBundle) -> dict:
     """
     Builds today's recommendation from real Garmin state.
- 
-    Pure function — all dependencies explicit via ModelBundle.
-    No side effects (DB writes happen in the endpoint via BackgroundTasks).
  
     Returns a dict matching the RecommendationResponse Pydantic model shape.
     """

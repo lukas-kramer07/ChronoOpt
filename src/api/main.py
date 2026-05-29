@@ -9,12 +9,14 @@
 
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from datetime import date
+
+from fastapi import Depends, FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 import os
 
 from src.api import inference, database
+from src.api.inference import ModelBundle
 from src.api.models import (
     RecommendationResponse,
     OutcomeLog,
@@ -24,29 +26,25 @@ from src.api.models import (
 
 
 # ---------------------------------------------------------------------------
-# Lifespan: runs startup and shutdown logic for the app process.
-# This is the correct FastAPI pattern for expensive one-time setup like
-# loading ML models — avoids the deprecated @app.on_event approach.
+# Lifespan
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # STARTUP
     print("[startup] Initialising database...")
     database.init_db()
 
     print("[startup] Loading ML models...")
-    inference.load_all_models()
+    app.state.models = inference.load_all_models()  # stored on app.state, not a global
 
     print("[startup] ChronoOpt API ready.")
     yield
 
-    # SHUTDOWN (nothing to clean up — model memory released by process exit)
     print("[shutdown] Goodbye.")
 
 
 # ---------------------------------------------------------------------------
-# App definition
+# App
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
@@ -62,70 +60,75 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
+# Dependency
+#
+# Endpoints that need ML models declare: models: ModelBundle = Depends(get_ml_models)
+# In tests, swap this out cleanly with:
+#   app.dependency_overrides[get_ml_models] = lambda: mock_bundle
+# ---------------------------------------------------------------------------
+
+def get_ml_models(request: Request) -> ModelBundle:
+    """Retrieves the loaded ModelBundle from app.state."""
+    return request.app.state.models
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
-def health():
+def health(models: ModelBundle = Depends(get_ml_models)):
     """
     Operational status of all system components.
-    Useful for confirming models loaded correctly before fetching a recommendation.
+    Check this first to confirm models loaded correctly before running inference.
     """
-    status = inference.is_ready()
-    all_ok = status["lstm_loaded"] and status["processor_fitted"]
-
+    ok = models.is_healthy
     return HealthResponse(
-        status="ok" if all_ok else "degraded",
-        lstm_loaded=status["lstm_loaded"],
-        policy_loaded=status["policy_loaded"],
-        processor_fitted=status["processor_fitted"],
-        last_garmin_fetch_date=status["last_garmin_fetch_date"],
-        garmin_days_available=status["garmin_days_available"],
-        policy_path=str(inference._policy_source),
-        message=(
-            "All systems operational."
-            if all_ok
-            else "Some components failed to load — check startup logs."
-        ),
+        status="ok" if ok else "degraded",
+        lstm_loaded=models.lstm is not None,
+        policy_loaded=models.policy is not None,
+        processor_fitted=models.processor._is_scaler_fitted,
+        last_garmin_fetch_date=None,   # populated after first /recommend call
+        garmin_days_available=0,
+        policy_path=models.policy_source,
+        message="All systems operational." if ok else "Some components failed — check startup logs.",
     )
 
 
 @app.get("/recommend", response_model=RecommendationResponse, tags=["Recommendations"])
-def recommend(background_tasks: BackgroundTasks, refresh: bool = False):
+def recommend(
+    background_tasks: BackgroundTasks,
+    refresh: bool = False,
+    models: ModelBundle = Depends(get_ml_models),
+):
     """
     Generate today's personalised daily recommendation.
 
     Fetches your last 10 days of Garmin data from local cache, runs the
     trained PPO policy on that real state, and returns the recommended
-    steps, activity, bed time, and wake time — along with the predicted
-    sleep score for that recommendation vs repeating yesterday's behaviour.
+    steps, activity, bed time, and wake time — alongside the predicted
+    sleep score for the recommendation vs repeating yesterday's behaviour.
 
-    The recommendation is cached after the first call of the day — subsequent
-    calls return the stored result instantly without re-running inference.
-    Pass `?refresh=true` to force re-computation (e.g. after new Garmin data).
-
-    The recommendation is automatically persisted to the local SQLite
-    database in the background so it appears in /history.
+    **Caching:** the recommendation is computed once per day and stored in
+    the local SQLite database. Subsequent calls return the cached result
+    immediately. Pass `?refresh=true` to force re-computation (e.g. after
+    new Garmin data arrives).
     """
-    from datetime import date as _date
+    today = date.today().isoformat()
 
-    today = _date.today().isoformat()
-
-    # Return cached recommendation if it exists and refresh not requested
     if not refresh:
         cached = database.get_recommendation_for_date(today)
         if cached:
             return RecommendationResponse(**cached)
 
     try:
-        result = inference.get_recommendation()
+        result = inference.get_recommendation(models)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
 
     background_tasks.add_task(database.upsert_recommendation, result)
-
     return RecommendationResponse(**result)
 
 
@@ -134,13 +137,9 @@ def log_outcome(outcome: OutcomeLog):
     """
     Log what you actually did today.
 
-    Accepts partial data — you don't need to fill every field. If an actual
-    sleep score is provided, the system computes the calibration error
-    (predicted vs actual) and logs it for model performance tracking.
-
-    Over time this data feeds the online personalisation loop: the more
-    real outcomes you log, the more the policy adapts to your specific
-    physiology.
+    All fields are optional — log what you know. If you provide an actual
+    sleep score, the system records the calibration error (predicted vs actual)
+    in the model log, which feeds the online personalisation loop over time.
     """
     try:
         database.upsert_outcome(outcome.model_dump())
@@ -153,13 +152,13 @@ def log_outcome(outcome: OutcomeLog):
 @app.get("/history", response_model=list[HistoryEntry], tags=["Tracking"])
 def history(days: int = 30):
     """
-    Returns the last N days of recommendations alongside logged actual outcomes.
+    Last N days of recommendations alongside logged actual outcomes.
 
-    The `score_delta` field (actual minus predicted) is the key metric for
-    evaluating model calibration — a well-calibrated model will have deltas
-    close to zero on average.
+    The `score_delta` field (actual − predicted) tracks model calibration
+    over time — a well-calibrated model should have deltas close to zero
+    on average.
     """
-    if days < 1 or days > 365:
+    if not 1 <= days <= 365:
         raise HTTPException(status_code=400, detail="days must be between 1 and 365")
 
     rows = database.get_history(limit=days)
@@ -167,7 +166,7 @@ def history(days: int = 30):
 
 
 # ---------------------------------------------------------------------------
-# Static file serving — the dashboard lives at /
+# Static files — dashboard at /
 # ---------------------------------------------------------------------------
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -177,7 +176,7 @@ if os.path.isdir(STATIC_DIR):
 else:
     @app.get("/", tags=["System"])
     def root():
-        """Dashboard not yet built — use /docs to interact with the API."""
+        """Dashboard not built yet — use /docs to interact with the API."""
         return {
             "message": "ChronoOpt API is running.",
             "docs": "/docs",

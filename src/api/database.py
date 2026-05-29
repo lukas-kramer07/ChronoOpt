@@ -219,3 +219,10 @@ def get_outcome_for_date(target_date: str) -> Optional[dict]:
             "SELECT * FROM outcomes WHERE date = ?", (target_date,)
         ).fetchone()
         return dict(row) if row else None
+
+def get_last_recommendation_date() -> Optional[str]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT date FROM recommendations ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+    return row["date"] if row else None

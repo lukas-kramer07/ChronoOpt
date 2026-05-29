@@ -20,7 +20,6 @@ from src.models.prediction_model import PredictionModel
 from src.models.data_processor import DataProcessor
 from src.rl_agent.policy_network import PolicyNetwork
 from src.rl_agent.rl_environment import ChronoOptEnv
-from src.rl_agent.deterministic_environment import DeterministicEnv
 from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.features.feature_engineer import extract_daily_features
 from src.rl_agent.train_agent import build_fitted_processor
@@ -124,25 +123,26 @@ def _scale_state(state_array: np.ndarray, models: ModelBundle) -> np.ndarray:
     )[0]
  
  
-def _run_env_step(
-    state_array: np.ndarray,
-    action: np.ndarray,
-    models: ModelBundle,
-) -> float:
+N_SCORING_STEPS = 30
+def _run_env_step(state_array: np.ndarray, action: np.ndarray, models: ModelBundle, n_steps: int =N_SCORING_STEPS) -> float:
     """
     Runs one step of the environment with the given action and returns the
     predicted sleep score. We manually set env.history to avoid perturbation.
     """
-    EnvClass = ChronoOptEnv if models.policy_source == "trained_policy" else DeterministicEnv
-    env = EnvClass(
+    env = ChronoOptEnv(
         initial_state_data=state_array,
         model=models.lstm,
         processor=models.processor,
         device=models.device,
     )
     env.history = state_array.tolist()
-    _, reward, _, _, _ = env.step(action)
-    return round(float(reward), 2)
+    env.step(action) # load the current action into the history
+    rewards = []
+    for _ in range(n_steps):
+        _, reward, _, _,_ = env.step(action)
+        rewards.append(reward)
+
+    return round(float(np.mean(rewards)), 2)
  
  
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def get_recommendation(models: ModelBundle) -> dict:
         )
     else:
         recommended_action = np.array(
-            [9000, 1, 0, 0, 0, 0, 0, 22, 30, 7, 0], dtype=np.float32
+            [900000, 1, 0, 0, 0, 0, 0, 22, 30, 7, 0], dtype=np.float32
         )
  
     # 3. Predicted sleep scores: recommended vs baseline (repeat yesterday)

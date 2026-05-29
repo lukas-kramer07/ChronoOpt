@@ -83,13 +83,14 @@ def health(models: ModelBundle = Depends(get_ml_models)):
     Check this first to confirm models loaded correctly before running inference.
     """
     ok = models.is_healthy
+    last_date = database.get_last_recommendation_date()
     return HealthResponse(
         status="ok" if ok else "degraded",
         lstm_loaded=models.lstm is not None,
         policy_loaded=models.policy is not None,
         processor_fitted=models.processor._is_scaler_fitted,
-        last_garmin_fetch_date=None,   # populated after first /recommend call
-        garmin_days_available=0,
+        last_garmin_fetch_date=last_date,   # populated after first /recommend call
+        garmin_days_available=10 if last_date else 0,
         policy_path=models.policy_source,
         message="All systems operational." if ok else "Some components failed — check startup logs.",
     )
@@ -122,7 +123,7 @@ def recommend(
             return RecommendationResponse(**cached)
 
     try:
-        result = inference.get_recommendation(models)
+        result = inference.get_recommendation(models) 
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:

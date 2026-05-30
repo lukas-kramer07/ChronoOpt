@@ -182,14 +182,14 @@ def get_recommendation(models: ModelBundle) -> dict:
     model =""
     baseline_action = state_array[-1, :11].astype(np.float32)
     if models.policy is not None:
-        recommended_score = _score_policy_rollout(state_array, scaled_obs, models,n_steps=7)
+        recommended_score = _score_policy_rollout(state_array, scaled_obs, models,n_steps=5)
         days = 7
         model = "rollout"
     else:
-        recommended_score = _score_fixed_action(state_array, recommended_action, models,n_steps=3)
+        recommended_score = _score_fixed_action(state_array, recommended_action, models,n_steps=5)
         days = 3
         model = "no-rollout"
-    baseline_score = _score_fixed_action(state_array, baseline_action, models)
+    baseline_score = _score_fixed_action(state_array, baseline_action, models,n_steps=5)
  
     # 4. Decode action → human-readable fields
     steps     = int(round(recommended_action[0]))

@@ -62,11 +62,6 @@ uvicorn src.api.main:app --reload
 # http://localhost:8000/docs   (interactive API)
 ```
 
-Or with Docker:
-
-```bash
-docker compose up
-```
 
 ---
 
@@ -123,7 +118,6 @@ ChronoOpt/
 │   └── raw_data/                    Garmin JSON cache (git-ignored)
 ├── notebooks/
 │   └── training_walkthrough.ipynb   LSTM curves, PPO reward progression
-├── docker-compose.yml
 └── check_data_quality.py
 ```
 

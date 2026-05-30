@@ -126,7 +126,7 @@ class ChronoOptEnv:
 
         # 3. Ensure logical bounds (e.g., hours stay in 0-23, minutes 0-59)
         # Note: These are unscaled, so we handle them before the processor
-        perturbed[:, 0] = np.clip(perturbed[:, 0], 0, 40000)      # steps
+        perturbed[:, 0] = np.clip(perturbed[:, 0], 0, 20000)      # steps
         perturbed[:, 7] = np.clip(perturbed[:, 7], 0, 23)         # bed_h
         perturbed[:, 8] = np.clip(perturbed[:, 8], 0, 59)         # bed_m
         perturbed[:, 9] = np.clip(perturbed[:, 9], 0, 23)         # wake_h
@@ -187,9 +187,9 @@ class ChronoOptEnv:
         ])  
 
         # --- 4. Compute reward from predicted sleep metrics ---
-        # Reconstruct model features into a dict for sleep score calculation
+        # Reconstruct model features into a dict for sleep score calculation; this is cursed af rn, sorry
         predicted_features_dict = self.processor.reconstruct_features_from_flat(
-            predicted_model_unscaled  
+            self.processor.transform_y(np.reshape(predicted_model_unscaled, shape=(1,-1))).reshape(-1)  
         )
         reward = float(self._calculate_reward(
             torch.tensor(predicted_model_unscaled)

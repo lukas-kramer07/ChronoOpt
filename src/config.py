@@ -31,7 +31,7 @@ MODEL_HYPERPARAMETERS = {
 }
 
 # --- Reinforcement Learning ---
-USE_DETERMINISTIC_ENV = True
+USE_DETERMINISTIC_ENV = False
 
 RL_AGENT_PARAMETERS = {
     'gamma': 0.99, # Discount factor

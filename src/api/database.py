@@ -41,6 +41,8 @@ def init_db() -> None:
                 predicted_score     REAL,
                 baseline_score      REAL,
                 score_delta         REAL,
+                score_days          INTEGER,
+                score_model         TEXT,
                 policy_source       TEXT,
                 created_at          TEXT DEFAULT (datetime('now'))
             );
@@ -96,6 +98,8 @@ def upsert_recommendation(rec: dict) -> None:
             "predicted_score": rec["predicted_scores"]["recommended"],
             "baseline_score":  rec["predicted_scores"]["baseline"],
             "score_delta":     rec["predicted_scores"]["delta"],
+            "score_days":      rec["predicted_scores"]["days"],
+            "score_model":     rec["predicted_scores"]["model"],
             "policy_source":   rec["policy_source"],
         })
 
@@ -206,6 +210,8 @@ def get_recommendation_for_date(target_date: str) -> Optional[dict]:
             "recommended": row["predicted_score"],
             "baseline":    row["baseline_score"],
             "delta":       row["score_delta"],
+            "days":        row["score_days"],
+            "model":       row["score_model"]
         },
         "state_days_used": 10,  # stored recommendations always used full state
         "policy_source":   row["policy_source"],

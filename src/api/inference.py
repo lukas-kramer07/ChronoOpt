@@ -123,25 +123,29 @@ def _scale_state(state_array: np.ndarray, models: ModelBundle) -> np.ndarray:
     )[0]
  
  
-N_SCORING_STEPS = 30
-def _run_env_step(state_array: np.ndarray, action: np.ndarray, models: ModelBundle, n_steps: int =N_SCORING_STEPS) -> float:
-    """
-    Runs one step of the environment with the given action and returns the
-    predicted sleep score. We manually set env.history to avoid perturbation.
-    """
-    env = ChronoOptEnv(
-        initial_state_data=state_array,
-        model=models.lstm,
-        processor=models.processor,
-        device=models.device,
-    )
+def _score_policy_rollout(state_array, scaled_obs, models, n_steps=7) -> float:
+    """Policy rollout — policy re-observes and re-acts at each step."""
+    env = ChronoOptEnv(initial_state_data=state_array, model=models.lstm,
+                       processor=models.processor, device=models.device)
     env.history = state_array.tolist()
-    env.step(action) # load the current action into the history
+    obs = scaled_obs.copy()
     rewards = []
     for _ in range(n_steps):
-        _, reward, _, _,_ = env.step(action)
+        action, _, _, _, _ = models.policy.get_action(obs, models.device, deterministic=True)
+        obs, reward, _, _, _ = env.step(action)
         rewards.append(reward)
+    return round(float(np.mean(rewards)), 2)
 
+def _score_fixed_action(state_array, action, models, n_steps=3) -> float:
+    """Baseline — repeat yesterday's action for a short horizon."""
+    env = ChronoOptEnv(initial_state_data=state_array, model=models.lstm,
+                       processor=models.processor, device=models.device)
+    env.history = state_array.tolist()
+    env.step(action)  # warmup — discard
+    rewards = []
+    for _ in range(n_steps):
+        _, reward, _, _, _ = env.step(action)
+        rewards.append(reward)
     return round(float(np.mean(rewards)), 2)
  
  
@@ -174,9 +178,18 @@ def get_recommendation(models: ModelBundle) -> dict:
         )
  
     # 3. Predicted sleep scores: recommended vs baseline (repeat yesterday)
+    days = 0
+    model =""
     baseline_action = state_array[-1, :11].astype(np.float32)
-    recommended_score = _run_env_step(state_array, recommended_action, models)
-    baseline_score    = _run_env_step(state_array, baseline_action, models)
+    if models.policy is not None:
+        recommended_score = _score_policy_rollout(state_array, scaled_obs, models,n_steps=7)
+        days = 7
+        model = "rollout"
+    else:
+        recommended_score = _score_fixed_action(state_array, recommended_action, models,n_steps=3)
+        days = 3
+        model = "no-rollout"
+    baseline_score = _score_fixed_action(state_array, baseline_action, models)
  
     # 4. Decode action → human-readable fields
     steps     = int(round(recommended_action[0]))
@@ -200,6 +213,8 @@ def get_recommendation(models: ModelBundle) -> dict:
             "recommended": recommended_score,
             "baseline":    baseline_score,
             "delta":       round(recommended_score - baseline_score, 2),
+            "days":        days,
+            "model":       model,
         },
         "state_days_used": days_used,
         "policy_source":   models.policy_source,

@@ -31,7 +31,7 @@ MODEL_HYPERPARAMETERS = {
 }
 
 # --- Reinforcement Learning ---
-USE_DETERMINISTIC_ENV = False
+USE_DETERMINISTIC_ENV = True
 
 RL_AGENT_PARAMETERS = {
     'gamma': 0.99, # Discount factor
@@ -54,7 +54,7 @@ PPO_HYPERPARAMETERS = {
     'k_epochs': 4,
     'batch_size': 64,
     'max_grad_norm': 0.5,
-    'total_steps': 3_500_000,
+    'total_steps': 1_500_000,
     'log_interval': 10,
 }
 

@@ -243,17 +243,62 @@ class ChronoOptEnv:
         return float(hardened_reward)
 
     def _predict_next_state(self, scaled_history: np.ndarray) -> np.ndarray:
-        """
-        Runs the LSTM on the scaled history and returns unscaled model-predicted
-        features (12,).
-
-        Args:
-            scaled_history (np.ndarray): Scaled state history, shape (1,seq_len, 23).
-
-        Returns:
-            np.ndarray: Unscaled model-predicted features, shape (12,).
-        """
         input_tensor = torch.tensor(scaled_history, dtype=torch.float32).to(self.device)
         with torch.no_grad():
             predicted_scaled = self.model(input_tensor).squeeze(0).cpu().numpy()
-        return self.processor.inverse_transform_y(predicted_scaled.reshape(1, -1))[0]
+        predicted = self.processor.inverse_transform_y(predicted_scaled.reshape(1, -1))[0]
+        
+        return self._apply_structural_constraints(predicted)
+
+    def _apply_structural_constraints(self, predicted: np.ndarray) -> np.ndarray:
+        """
+        Enforce physical consistency between action (bed/wake times)
+        and predicted sleep metrics. Applied after LSTM inverse transform.
+        
+        Model feature order (indices 0-11):
+            avg_hr, rhr, resp, stress, body_battery,
+            total_sleep, deep_sleep, rem_sleep, awake_sleep,
+            restless, avg_sleep_stress, sleep_rhr
+        """
+        p = predicted.copy()
+        last_day = self.history[-1]
+        
+        # --- Compute max possible sleep from bed/wake times ---
+        bed_h, bed_m   = last_day[7], last_day[8]
+        wake_h, wake_m = last_day[9], last_day[10]
+        
+        bed_time  = bed_h  + bed_m  / 60.0
+        wake_time = wake_h + wake_m / 60.0
+        
+        # Handle overnight wrap (bed at 23:00, wake at 7:00)
+        if wake_time <= bed_time:
+            wake_time += 24.0
+        
+        time_in_bed_s = (wake_time - bed_time) * 3600.0
+        time_in_bed_s = max(time_in_bed_s, 0.0)
+        
+        # 1. Total sleep cannot exceed time in bed (allow ~10min to fall asleep)
+        max_sleep = max(0.0, time_in_bed_s - 600.0)
+        p[5] = np.clip(p[5], 0.0, max_sleep)  # total_sleep_seconds
+        
+        # 2. Sleep stages cannot exceed total sleep — normalize proportionally
+        total = p[5]
+        deep, rem, awake = p[6], p[7], p[8]
+        stages_sum = deep + rem + awake
+        if stages_sum > total and stages_sum > 0:
+            scale = total / stages_sum
+            p[6] *= scale  # deep_sleep_seconds
+            p[7] *= scale  # rem_sleep_seconds
+            p[8] *= scale  # awake_sleep_seconds
+        
+        # 3. Hard physiological bounds
+        p[0]  = np.clip(p[0],  30.0, 220.0)   # avg_heart_rate
+        p[1]  = np.clip(p[1],  25.0, 120.0)   # resting_heart_rate
+        p[2]  = np.clip(p[2],   8.0,  30.0)   # avg_respiration_rate
+        p[3]  = np.clip(p[3],   0.0, 100.0)   # avg_stress
+        p[4]  = np.clip(p[4],   0.0, 100.0)   # body_battery_end_value
+        p[9]  = np.clip(p[9],   0.0, 200.0)   # restless_moments_count
+        p[10] = np.clip(p[10],  0.0, 100.0)   # avg_sleep_stress
+        p[11] = np.clip(p[11], 25.0, 120.0)   # sleep_rhr
+        
+        return p

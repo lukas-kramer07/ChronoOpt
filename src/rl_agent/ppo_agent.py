@@ -249,12 +249,6 @@ class PPOAgent:
                     self.policy.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
-                                # First minibatch of first epoch only:
-                if not policy_losses:
-                    print(f"    [diag] max_ratio={ratio.max().item():.2f}  "
-                        f"adv_range=[{batch['advantages'].min().item():.2f}, "
-                        f"{batch['advantages'].max().item():.2f}]")
-
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
                 entropies.append(-entropy_loss.item())

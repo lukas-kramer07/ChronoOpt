@@ -136,6 +136,9 @@ def run_rl_training():
 
 
     evaluate_reward_range(env,processor,device)
+
+    # baseline sample
+    evaluate_policy(policy_net, env, processor, device, num_days=30)
     # --- 6. Train ---
     print(f"\nStarting REINFORCE training — {config.RL_TRAIN_NUM_EPISODES} episodes...")
     rollout_rewards = agent.train(

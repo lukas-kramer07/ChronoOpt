@@ -12,10 +12,12 @@ from datetime import date
 from src import config
 from src.rl_agent.ppo_agent import PPOAgent
 from src.models.prediction_model import PredictionModel
+from src.models.train_edmd import train_edmd
 from src.models.data_processor import DataProcessor
 from src.features.feature_engineer import extract_daily_features
 from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.rl_agent.rl_environment import ChronoOptEnv
+from src.rl_agent.edmd_environment import EDMDEnv
 from src.rl_agent.policy_network import PolicyNetwork
 from src.rl_agent.agent import ReinforceAgent
 from src.rl_agent.deterministic_environment import DeterministicEnv
@@ -32,7 +34,7 @@ def build_fitted_processor() -> tuple[DataProcessor, list]:
     the fitted processor alongside the full list of processed feature dicts.
     All data is served from local cache — no Garmin API calls.
     """
-    training_end_date = date.fromisoformat(config.LSTM_TRAINING_END_DATE)
+    training_end_date = date.fromisoformat(config.TRAINING_END_DATE)
     raw_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW, end_date=training_end_date)
     if not raw_data:
         raise RuntimeError("Failed to fetch historical data. Check cache.")
@@ -99,6 +101,16 @@ def run_rl_training():
             model=model,
             processor=processor,
             device=device,
+        )
+    elif config.USE_EDMD_ENV:
+        edmd_model, _ = train_edmd(processor=processor)  # reuses already-fitted processor
+        env = EDMDEnv(
+            initial_state_data=initial_state,
+            model=model,
+            processor=processor,
+            device=device,
+            edmd_model=edmd_model,
+            use_constraints=config.USE_PREDICTION_CONSTRAINTS,
         )
     else:
         env = ChronoOptEnv(

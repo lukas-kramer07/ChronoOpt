@@ -110,7 +110,7 @@ def run_prediction_pipeline():
 
     # --- 1. Data Ingestion ---
     print(f"\nCollecting historical data for the last {config.NUM_DAYS_TO_FETCH_RAW} days...")
-    training_end_date = date.fromisoformat(config.LSTM_TRAINING_END_DATE)
+    training_end_date = date.fromisoformat(config.TRAINING_END_DATE)
     raw_historical_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW, end_date=training_end_date)
 
 

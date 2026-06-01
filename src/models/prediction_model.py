@@ -81,7 +81,7 @@ class PredictionModel(nn.Module):
                     lr_scheduler_factor: float = 0.1, lr_scheduler_patience: int = 5,
                     weight_decay: float = 1e-5, # Hardcoded default weight_decay (L2 regularization)
                     grad_clip_norm: float = 1.0, # Hardcoded default grad_clip_norm
-                    training_noise_std: float = 0.05): # Added training_noise_std parameter
+                    training_noise_std: float = 0.05) -> tuple[list, list]: # Added training_noise_std parameter
         """
         Trains the prediction model with a training and validation split, and early stopping.
         Now includes a learning rate scheduler, regularization (Weight Decay, Gradient Clipping),
@@ -100,6 +100,9 @@ class PredictionModel(nn.Module):
             weight_decay (float): L2 regularization factor for the optimizer.
             grad_clip_norm (float): Maximum norm for gradient clipping.
             training_noise_std (float): Standard deviation of Gaussian noise to add to input features during training.
+
+        Returns:
+            tuple: (train_losses, val_losses)
         """
         # Split data into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(
@@ -131,6 +134,9 @@ class PredictionModel(nn.Module):
 
         best_val_loss = float('inf')
         epochs_no_improve = 0
+
+        train_losses = []
+        val_losses = []
 
         for epoch in range(epochs):
             # Training loop
@@ -164,6 +170,9 @@ class PredictionModel(nn.Module):
             # Step the learning rate scheduler
             scheduler.step(val_loss)
 
+            train_losses.append(loss.item())
+            val_losses.append(val_loss)
+
             # Print progress
             if (epoch + 1) % 2 == 0 or epoch == 0: # Print first epoch and every 10th
                 print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, LR: {optimizer.param_groups[0]["lr"]:.6f}')
@@ -181,6 +190,7 @@ class PredictionModel(nn.Module):
                     break # Stop training
 
         print("Model training complete.")
+        return train_losses, val_losses
 
     def predict(self, X_test: np.ndarray) -> np.ndarray:
         """

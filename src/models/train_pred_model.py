@@ -18,7 +18,7 @@ from src.models.data_processor import DataProcessor
 from src.models.prediction_model import PredictionModel
 from src import config 
 from src.features.utils import calculate_sleep_score_proxy # For calculating reward later
-from src.models.plot_utils import plot_next_day_prediction
+from src.models.plot_utils import plot_next_day_prediction, plot_training_history
 
 def run_prediction_pipeline():
     """
@@ -86,7 +86,7 @@ def run_prediction_pipeline():
 
     # --- 5. Model Training ---
     print("\nTraining Prediction Model...")
-    model.train_model(
+    train_losses, val_losses = model.train_model(
         X_data, y_data,
         epochs=model_params['epochs'],
         batch_size=model_params['batch_size'],
@@ -142,6 +142,7 @@ def run_prediction_pipeline():
         # --- Plotting Predictions ---
         # We need the historical features (unscaled) and the predicted features (unscaled)
         plot_next_day_prediction(processed_features, predicted_structured_features, config.NUM_DAYS_FOR_STATE)
+        plot_training_history(train_losses,val_losses)
 
     else:
         print("Not enough data to make an example prediction.")

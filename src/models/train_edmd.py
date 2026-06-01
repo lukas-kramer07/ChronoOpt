@@ -16,7 +16,7 @@ from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.features.feature_engineer import extract_daily_features
 from src.models.data_processor import DataProcessor
 from src.models.edmd_model import EDMDModel
-
+from src.models.plot_utils import plot_model_diagnostics
 
 # ------------------------------------------------------------------
 # Analytical biometric function (extracted from DeterministicEnv)
@@ -265,104 +265,23 @@ def train_edmd(processor: DataProcessor = None)-> tuple[EDMDModel, DataProcessor
     print("\n[5/5] Evaluating...")
     edmd.evaluate(X_val, y_val, processor.model_feature_keys)
     edmd.print_sensitivity(processor.agent_feature_keys, processor.model_feature_keys)
-
+    W = edmd.regressor.coef_
+    plot_model_diagnostics(
+        pred_unscaled=processor.inverse_transform_y(
+            np.array([edmd.predict(x) for x in X_val])
+        ),
+        true_unscaled=processor.inverse_transform_y(y_val),
+        model_feature_keys=processor.model_feature_keys,
+        agent_feature_keys=processor.agent_feature_keys,
+        linear_action_weights=np.abs(W[:, :11]),
+        model_name="EDMD",
+        save_path="src/models/saved_models/edmd_diagnostics.png",
+        show=False,
+    )
     # --- 6. Save ---
     edmd.save(config.EDMD_MODEL_SAVE_PATH)
     print(f"\nEDMD training complete.")
-    plot_edmd_results(edmd, X_val, y_val,processor)
     return edmd, processor
-
-
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-
-def plot_edmd_results(edmd: EDMDModel,
-                      X_val: np.ndarray,
-                      y_val: np.ndarray,
-                      processor: DataProcessor,
-                      save_path: str = "src/models/saved_models/edmd_diagnostics.png"):
-    """
-    Three-panel diagnostic plot:
-        1. Predicted vs actual for all 12 features (scatter)
-        2. Residual distributions per feature (boxplot)
-        3. Action feature total influence (bar chart from K matrix)
-    """
-    pred_scaled = np.array([edmd.predict(x) for x in X_val])
-    
-    # Inverse transform for human-readable scale
-    pred_real = processor.inverse_transform_y(pred_scaled)
-    true_real = processor.inverse_transform_y(y_val)
-    
-    keys = processor.model_feature_keys
-    n    = len(keys)
-
-    fig = plt.figure(figsize=(20, 24))
-    gs  = gridspec.GridSpec(3, 1, hspace=0.4)
-
-    # --- Panel 1: Predicted vs Actual (4×3 subgrid) ---
-    gs1 = gridspec.GridSpecFromSubplotSpec(4, 3, subplot_spec=gs[0], hspace=0.5, wspace=0.35)
-    for i, key in enumerate(keys):
-        ax = fig.add_subplot(gs1[i // 3, i % 3])
-        ax.scatter(true_real[:, i], pred_real[:, i],
-                   alpha=0.4, s=12, color='steelblue')
-        mn = min(true_real[:, i].min(), pred_real[:, i].min())
-        mx = max(true_real[:, i].max(), pred_real[:, i].max())
-        ax.plot([mn, mx], [mn, mx], 'r--', lw=1)
-        mae = float(np.mean(np.abs(pred_real[:, i] - true_real[:, i])))
-        short = key.replace('_seconds', 's').replace('_', ' ')
-        ax.set_title(f"{short}\nMAE={mae:.1f}", fontsize=8)
-        ax.set_xlabel("Actual", fontsize=7)
-        ax.set_ylabel("Predicted", fontsize=7)
-        ax.tick_params(labelsize=7)
-    fig.text(0.5, 0.98, "EDMD — Predicted vs Actual (unscaled)",
-             ha='center', fontsize=13, fontweight='bold')
-
-    # --- Panel 2: Residuals boxplot ---
-    ax2 = fig.add_subplot(gs[1])
-    residuals = pred_real - true_real  # (N, 12)
-    # Normalize by feature std for comparability
-    stds = true_real.std(axis=0) + 1e-8
-    norm_res = residuals / stds
-    bp = ax2.boxplot(norm_res, patch_artist=True, notch=False,
-                     medianprops=dict(color='red', lw=2))
-    for patch in bp['boxes']:
-        patch.set_facecolor('lightsteelblue')
-        patch.set_alpha(0.7)
-    ax2.axhline(0, color='gray', lw=1, ls='--')
-    ax2.set_xticklabels(
-        [k.replace('_seconds', 's').replace('_', '\n') for k in keys],
-        fontsize=7
-    )
-    ax2.set_ylabel("Normalised residual (pred - actual) / std", fontsize=9)
-    ax2.set_title("Residual Distribution per Feature (normalised)", fontsize=11)
-    ax2.grid(axis='y', alpha=0.3)
-
-    # --- Panel 3: Action feature influence bar chart ---
-    ax3 = fig.add_subplot(gs[2])
-    W = edmd.regressor.coef_          # (12, n_observables)
-    linear_action_w = np.abs(W[:, :11])  # (12, 11) — linear action cols only
-    total_influence  = linear_action_w.sum(axis=0)  # (11,)
-    agent_keys = processor.agent_feature_keys
-    colors = ['#e74c3c' if 'bed' in k or 'wake' in k
-              else '#2ecc71' if 'step' in k
-              else '#3498db' for k in agent_keys]
-    bars = ax3.bar(agent_keys, total_influence, color=colors, edgecolor='white', lw=0.5)
-    ax3.set_xticklabels(
-        [k.replace('_', '\n').replace('activity\n', '') for k in agent_keys],
-        fontsize=8
-    )
-    ax3.set_ylabel("Total |weight| across all 12 predictions", fontsize=9)
-    ax3.set_title("EDMD — Action Feature Influence (linear K matrix terms)\n"
-                  "Red=sleep timing  Green=steps  Blue=activity", fontsize=11)
-    ax3.grid(axis='y', alpha=0.3)
-    for bar, val in zip(bars, total_influence):
-        ax3.text(bar.get_x() + bar.get_width() / 2,
-                 bar.get_height() + 0.0002,
-                 f"{val:.4f}", ha='center', fontsize=7)
-
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"Diagnostic plots saved to {save_path}")
-    plt.close()
 
 if __name__ == "__main__":
     train_edmd()

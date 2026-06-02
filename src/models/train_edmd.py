@@ -17,7 +17,6 @@ from src.features.feature_engineer import extract_daily_features
 from src.models.data_processor import DataProcessor
 from src.models.edmd_model import EDMDModel
 from src.models.plot_utils import plot_model_diagnostics, plot_next_day_prediction
-from src.features.utils import generate_synthetic_data
 from datetime import datetime, timedelta
 
 # ------------------------------------------------------------------
@@ -123,7 +122,7 @@ def train_edmd(processor: DataProcessor = None)-> tuple[EDMDModel, DataProcessor
             historical_features_dicts=processed_features,
             predicted_features_dict=predicted_dict,
             num_days_for_state=config.NUM_DAYS_FOR_STATE,
-            show=True,
+            show=False,
         )
 
     # --- 6. Save ---

@@ -173,7 +173,7 @@ def evaluate_reward_range(env, processor, device):
     """Check reward range between worst and best possible actions."""
     worst_action = np.array([0, 0, 0, 0, 0, 0, 1,
                               6, 0, 12, 0], dtype=np.float32)
-    best_action  = np.array([9000, 1, 0, 0, 0, 0, 0,
+    best_action  = np.array([14000, 1, 0, 0, 0, 0, 0,
                               22, 30, 7, 0], dtype=np.float32)
 
 
@@ -185,7 +185,6 @@ def evaluate_reward_range(env, processor, device):
             rewards.append(r)
             if i >= 10:  # post-saturation only
                 diagnostics.append(info['predicted_model_features'])
-                print(info["predicted_model_features"])
 
         avg_reward = np.mean(rewards[10:])
         print(f"\n{'='*55}")

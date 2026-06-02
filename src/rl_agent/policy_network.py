@@ -163,6 +163,7 @@ class PolicyNetwork(nn.Module):
                                 wake_hour, wake_minute]
         """
         cont = continuous_out.detach().cpu().numpy().flatten()
+        cont = np.clip(cont,0.0,1.0)
         probs = activity_probs.detach().cpu().numpy().flatten()
  
         # Scale continuous outputs to realistic ranges

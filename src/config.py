@@ -12,7 +12,7 @@ NUM_DAYS_TO_FETCH_RAW = 450
 NUM_DAYS_FOR_STATE = 10 
 
 LSTM_MODEL_SAVE_PATH = "src/models/saved_models/lstm_chronoopt.pt"
-LSTM_TRAINING_END_DATE = "2025-12-01"
+TRAINING_END_DATE = "2025-12-01"
 
 # --- Prediction Model Hyperparameters ---
 # These parameters are for the PyTorch PredictionModel (LSTM).
@@ -30,8 +30,16 @@ MODEL_HYPERPARAMETERS = {
     'lr_scheduler_patience': 10, 
 }
 
+# --- EDMD ---
+EDMD_MODEL_SAVE_PATH      = "src/models/saved_models/edmd_chronoopt.pkl"
+EDMD_DEGREE               = 1      # polynomial lifting degree
+EDMD_ALPHA                = 100.0     # Ridge regularization
+EDMD_SYNTHETIC_VARIANTS   = 0      # synthetic action variants per real day
+USE_EDMD_ENV              = True  
+USE_PREDICTION_CONSTRAINTS  = True
+
 # --- Reinforcement Learning ---
-USE_DETERMINISTIC_ENV = True
+USE_DETERMINISTIC_ENV = False
 
 RL_AGENT_PARAMETERS = {
     'gamma': 0.99, # Discount factor
@@ -49,7 +57,7 @@ PPO_HYPERPARAMETERS = {
     'lam': 0.95,
     'clip_eps': 0.2,
     'c1': 0.5,
-    'c2': 0.01,
+    'c2': 0.05,
     'n_steps': 2048,
     'k_epochs': 4,
     'batch_size': 64,

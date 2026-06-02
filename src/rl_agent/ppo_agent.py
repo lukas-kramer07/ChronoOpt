@@ -227,7 +227,7 @@ class PPOAgent:
 
                 # PPO ratio
                 log_ratio = new_log_probs - batch['log_probs']
-                ratio = torch.exp(torch.clamp(log_ratio, min=-4.0, max=4.0))
+                ratio = torch.exp(torch.clamp(log_ratio, min=-10.0, max=10.0))
 
                 # Clipped surrogate loss
                 advantages = batch['advantages']
@@ -248,12 +248,6 @@ class PPOAgent:
                 torch.nn.utils.clip_grad_norm_(
                     self.policy.parameters(), self.max_grad_norm)
                 self.optimizer.step()
-
-                                # First minibatch of first epoch only:
-                if not policy_losses:
-                    print(f"    [diag] max_ratio={ratio.max().item():.2f}  "
-                        f"adv_range=[{batch['advantages'].min().item():.2f}, "
-                        f"{batch['advantages'].max().item():.2f}]")
 
                 policy_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())

@@ -12,10 +12,12 @@ from datetime import date
 from src import config
 from src.rl_agent.ppo_agent import PPOAgent
 from src.models.prediction_model import PredictionModel
+from src.models.train_edmd import train_edmd
 from src.models.data_processor import DataProcessor
 from src.features.feature_engineer import extract_daily_features
 from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.rl_agent.rl_environment import ChronoOptEnv
+from src.rl_agent.edmd_environment import EDMDEnv
 from src.rl_agent.policy_network import PolicyNetwork
 from src.rl_agent.agent import ReinforceAgent
 from src.rl_agent.deterministic_environment import DeterministicEnv
@@ -32,7 +34,7 @@ def build_fitted_processor() -> tuple[DataProcessor, list]:
     the fitted processor alongside the full list of processed feature dicts.
     All data is served from local cache — no Garmin API calls.
     """
-    training_end_date = date.fromisoformat(config.LSTM_TRAINING_END_DATE)
+    training_end_date = date.fromisoformat(config.TRAINING_END_DATE)
     raw_data = get_historical_metrics(config.NUM_DAYS_TO_FETCH_RAW, end_date=training_end_date)
     if not raw_data:
         raise RuntimeError("Failed to fetch historical data. Check cache.")
@@ -100,6 +102,16 @@ def run_rl_training():
             processor=processor,
             device=device,
         )
+    elif config.USE_EDMD_ENV:
+        edmd_model, _ = train_edmd(processor=processor)  # reuses already-fitted processor
+        env = EDMDEnv(
+            initial_state_data=initial_state,
+            model=model,
+            processor=processor,
+            device=device,
+            edmd_model=edmd_model,
+            use_constraints=config.USE_PREDICTION_CONSTRAINTS,
+        )
     else:
         env = ChronoOptEnv(
             initial_state_data=initial_state,
@@ -136,6 +148,9 @@ def run_rl_training():
 
 
     evaluate_reward_range(env,processor,device)
+
+    # baseline sample
+    evaluate_policy(policy_net, env, processor, device, num_days=30)
     # --- 6. Train ---
     print(f"\nStarting REINFORCE training — {config.RL_TRAIN_NUM_EPISODES} episodes...")
     rollout_rewards = agent.train(
@@ -153,37 +168,80 @@ def run_rl_training():
     # --- Evaluate trained policy ---
     evaluate_policy(policy_net, env, processor, device, num_days=30)
 
-# Run 10 episodes with a random policy and 10 with a greedy optimal policy
-# to verify the reward spread is meaningful
 
 def evaluate_reward_range(env, processor, device):
     """Check reward range between worst and best possible actions."""
-    
-    # Worst action: no steps, no activity, bad sleep schedule
-    worst_action = np.array([0, 0, 0, 0, 0, 0, 1,  # NoActivity
-                              6, 0, 12, 0], dtype=np.float32)  # bed 6am, wake 12am
-    
-    # Best action: good steps, vigorous activity, good sleep schedule  
-    best_action = np.array([9000, 1, 0, 0, 0, 0, 0,  # Strength
-                             22, 30, 7, 0], dtype=np.float32)  # bed 22:30, wake 7:00
+    worst_action = np.array([0, 0, 0, 0, 0, 0, 1,
+                              6, 0, 12, 0], dtype=np.float32)
+    best_action  = np.array([14000, 1, 0, 0, 0, 0, 0,
+                              22, 30, 7, 0], dtype=np.float32)
 
-    obs, _ = env.reset()
-    
-    worst_rewards = []
-    best_rewards = []
-    
-    for _ in range(30):
-        _, r_worst, _, _, _ = env.step(worst_action)
-        worst_rewards.append(r_worst)
-    
-    obs, _ = env.reset()
-    for _ in range(30):
-        _, r_best, _, _, _ = env.step(best_action)
-        best_rewards.append(r_best)
-    
-    print(f"Worst action avg reward per step: {np.mean(worst_rewards):.2f}")
-    print(f"Best action avg reward per step:  {np.mean(best_rewards):.2f}")
-    print(f"Reward gap: {np.mean(best_rewards) - np.mean(worst_rewards):.2f}")
+
+    def run_and_print(action, label):
+        obs, _ = env.reset()
+        rewards, diagnostics = [], []
+        for i in range(30):
+            _, r, _, _, info = env.step(action)
+            rewards.append(r)
+            if i >= 10:  # post-saturation only
+                diagnostics.append(info['predicted_model_features'])
+
+        avg_reward = np.mean(rewards[10:])
+        print(f"\n{'='*55}")
+        print(f"  {label}")
+        print(f"  Avg reward (steps 10-30): {avg_reward:.2f}")
+        print(f"  Avg predicted biometrics (steps 10-30):")
+
+        avg_features = {}
+
+        for key in diagnostics[0]:
+            vals = []
+
+            for d in diagnostics:
+                value = d[key]
+
+                if isinstance(value, dict):
+                    continue
+
+                if isinstance(value, (int, float, np.number)):
+                    vals.append(value)
+
+            if vals:
+                avg_features[key] = np.mean(vals)
+        # Print top-level features
+        for k, v in avg_features.items():
+            print(f"    {k:<35} {v:>8.2f}")
+        
+        # Print sleep metrics separately
+        sleep_keys = ['total_sleep_seconds', 'deep_sleep_seconds',
+                      'rem_sleep_seconds', 'awake_sleep_seconds',
+                      'restless_moments_count', 'avg_sleep_stress',
+                      'resting_heart_rate']
+        print(f"    --- sleep_metrics ---")
+        for sk in sleep_keys:
+            vals = [d['sleep_metrics'][sk] for d in diagnostics
+                    if 'sleep_metrics' in d and sk in d['sleep_metrics']]
+            if vals:
+                # convert seconds to hours for readability
+                v = np.mean(vals)
+                if 'seconds' in sk:
+                    print(f"    {sk:<35} {v:>8.0f}s ({v/3600:.2f}h)")
+                else:
+                    print(f"    {sk:<35} {v:>8.2f}")
+        
+        print(f"    --- action ---")
+        action_names = processor.agent_feature_keys
+        for name, val in zip(action_names, action):
+            print(f"    {name:<35} {val:>8.2f}")
+        
+        return np.mean(rewards[10:])
+
+    r_worst = run_and_print(worst_action, "WORST ACTION (bed 06:00, wake 12:00, no activity, 0 steps)")
+    r_best  = run_and_print(best_action,  "BEST ACTION  (bed 22:30, wake 07:00, strength, 9000 steps)")
+
+    print(f"\n{'='*55}")
+    print(f"  Reward gap (steps 10-30): {r_best - r_worst:.2f}")
+    print(f"{'='*55}")
 
 def evaluate_policy(policy_net: PolicyNetwork,
                     env: ChronoOptEnv,

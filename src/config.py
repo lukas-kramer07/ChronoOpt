@@ -32,8 +32,8 @@ MODEL_HYPERPARAMETERS = {
 
 # --- EDMD ---
 EDMD_MODEL_SAVE_PATH      = "src/models/saved_models/edmd_chronoopt.pkl"
-EDMD_DEGREE               = 2       # polynomial lifting degree
-EDMD_ALPHA                = 1.0     # Ridge regularization
+EDMD_DEGREE               = 1      # polynomial lifting degree
+EDMD_ALPHA                = 100.0     # Ridge regularization
 EDMD_SYNTHETIC_VARIANTS   = 0      # synthetic action variants per real day
 USE_EDMD_ENV              = True    # set False to fall back to LSTM env
 

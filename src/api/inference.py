@@ -23,6 +23,7 @@ from src.rl_agent.rl_environment import ChronoOptEnv
 from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.features.feature_engineer import extract_daily_features
 from src.rl_agent.train_agent import build_fitted_processor
+from src.models.edmd_model import EDMDModel
  
  
 # ---------------------------------------------------------------------------
@@ -40,6 +41,7 @@ class ModelBundle:
     policy: Optional[PolicyNetwork]
     policy_source: str   # "trained_policy" | "deterministic_fallback"
     device: torch.device
+    edmd: EDMDModel
  
     @property
     def is_healthy(self) -> bool:
@@ -52,17 +54,18 @@ class ModelBundle:
  
 def load_all_models() -> ModelBundle:
     """
-    Loads the LSTM, fits the DataProcessor, and loads the trained policy.
+    Loads the LSTM/EDMD, fits the DataProcessor, and loads the trained policy.
     Called once inside the FastAPI lifespan context; result stored on app.state.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[inference] Device: {device}")
  
-    # --- LSTM ---
+    # --- LSTM/EDMD ---
     print("[inference] Loading LSTM...")
     lstm = PredictionModel.load(config.LSTM_MODEL_SAVE_PATH, device)
     print("[inference] LSTM loaded.")
- 
+
+    edmd = EDMDModel.load(config.EDMD_MODEL_SAVE_PATH)
     # --- DataProcessor ---
     # Replays the training pipeline from cache to refit the StandardScalers
     # with identical parameters to those used during LSTM training.
@@ -87,6 +90,7 @@ def load_all_models() -> ModelBundle:
         policy=policy,
         policy_source=policy_source,
         device=device,
+        edmd=edmd
     )
  
  

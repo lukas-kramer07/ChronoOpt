@@ -23,7 +23,9 @@ from src.api.models import (
     HistoryEntry,
     HealthResponse,
 )
-
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from src.api.online_loop import register_nightly_job
+from src.api.online_loop import run_nightly_loop
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -37,9 +39,13 @@ async def lifespan(app: FastAPI):
     print("[startup] Loading ML models...")
     app.state.models = inference.load_all_models()  # stored on app.state, not a global
 
+    scheduler = AsyncIOScheduler()
+    register_nightly_job(scheduler,app.state)
+    scheduler.start()
+    app.state.scheduler = scheduler
     print("[startup] ChronoOpt API ready.")
     yield
-
+    app.state.scheduler.shutdown()
     print("[shutdown] Goodbye.")
 
 
@@ -107,10 +113,10 @@ def recommend(
 
     Fetches your last 10 days of Garmin data from local cache, runs the
     trained PPO policy on that real state, and returns the recommended
-    steps, activity, bed time, and wake time — alongside the predicted
+    steps, activity, bed time, and wake time, alongside the predicted
     sleep score for the recommendation vs repeating yesterday's behaviour.
 
-    **Caching:** the recommendation is computed once per day and stored in
+    Caching: the recommendation is computed once per day and stored in
     the local SQLite database. Subsequent calls return the cached result
     immediately. Pass `?refresh=true` to force re-computation (e.g. after
     new Garmin data arrives).
@@ -165,6 +171,10 @@ def history(days: int = 30):
     rows = database.get_history(limit=days)
     return [HistoryEntry(**row) for row in rows]
 
+@app.post("/loop/run", tags=["System"])
+async def trigger_loop():
+    """Manually trigger the nightly loop."""
+    return await run_nightly_loop(app.state)
 
 # ---------------------------------------------------------------------------
 # Static files — dashboard at /

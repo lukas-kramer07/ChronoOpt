@@ -71,7 +71,7 @@ POLICY_SAVE_PATH = "src/rl_agent/saved_policies/reinforce_policy.pt"
 RL_TRAIN_NUM_EPISODES = 500
 RL_TRAIN_MAX_STEPS = 5
 RL_TRAIN_LOG_INTERVAL = 10
-
+ONLINE_LEARNING_RATE = 1e-3
 # --- Other Global Settings ---
 # Seed for reproducibility
 RANDOM_SEED = 42

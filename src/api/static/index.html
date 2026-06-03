@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChronoOpt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --border: #30363d;
+  --teal: #2dd4bf;
+  --teal-dim: rgba(45,212,191,0.1);
+  --text: #e6edf3;
+  --muted: #7d8590;
+  --green: #3fb950;
+  --red: #f85149;
+  --amber: #d29922;
+  --font-sans: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 14px; line-height: 1.6; min-height: 100vh; }
+.container { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.logo { display: flex; align-items: baseline; gap: 0.5rem; }
+.logo-name { font-family: var(--font-mono); font-size: 18px; font-weight: 500; color: var(--teal); }
+.logo-sub { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+.header-right { display: flex; align-items: center; gap: 1rem; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+.status-dot.ok { background: var(--green); }
+.status-dot.error { background: var(--red); }
+.date-str { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.refresh-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 4px; display: flex; align-items: center; transition: color 0.15s; }
+.refresh-btn:hover { color: var(--text); }
+.refresh-btn i { font-size: 16px; }
+.spinning { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.section-label { font-size: 11px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1.75rem; }
+.loading { color: var(--muted); font-size: 13px; font-family: var(--font-mono); }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-family: var(--font-mono); padding: 2px 8px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
+
+.rec-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.rec-meta-text { font-size: 12px; color: var(--muted); }
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
+.rec-item { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.875rem 1rem; }
+.rec-label { font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 5px; }
+.rec-label i { font-size: 13px; }
+.rec-value { font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
+.rec-value.sm { font-size: 15px; line-height: 1.5; }
+
+.score-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; }
+.score-item { text-align: center; }
+.score-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+.score-num { font-family: var(--font-mono); font-size: 40px; font-weight: 500; }
+.score-num.rec { color: var(--teal); }
+.score-num.base { color: var(--muted); }
+.score-delta { text-align: center; padding: 0.75rem 1.25rem; background: var(--teal-dim); border: 1px solid rgba(45,212,191,0.2); border-radius: 6px; }
+.delta-label { font-size: 10px; color: var(--teal); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.2rem; }
+.delta-num { font-family: var(--font-mono); font-size: 22px; font-weight: 500; color: var(--teal); }
+.score-footnote { font-size: 11px; color: var(--muted); text-align: center; margin-top: 1rem; }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; }
+.fg { display: flex; flex-direction: column; gap: 0.35rem; }
+.fg label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.fg input, .fg select { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--font-mono); font-size: 13px; padding: 0.45rem 0.75rem; outline: none; transition: border-color 0.15s; width: 100%; }
+.fg input:focus, .fg select:focus { border-color: var(--teal); }
+.fg select option { background: var(--surface2); }
+.checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; font-size: 13px; color: var(--muted); cursor: pointer; }
+.checkbox-row input { accent-color: var(--teal); cursor: pointer; }
+.form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 0.5rem 1.25rem; border-radius: 4px; font-size: 13px; font-family: var(--font-sans); cursor: pointer; border: none; transition: opacity 0.15s, transform 0.1s; }
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--teal); color: #0d1117; font-weight: 500; }
+.btn-primary:hover { opacity: 0.88; }
+.form-msg { font-size: 12px; font-family: var(--font-mono); display: none; }
+
+.chart-wrap { position: relative; height: 220px; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo">
+      <span class="logo-name">ChronoOpt</span>
+      <span class="logo-sub">Circadian Optimizer</span>
+    </div>
+    <div class="header-right">
+      <span class="date-str" id="today-date"></span>
+      <div class="status-dot" id="status-dot" title="System status"></div>
+      <button class="refresh-btn" id="refresh-btn" title="Force refresh recommendation">
+        <i class="ti ti-refresh" id="refresh-icon"></i>
+      </button>
+    </div>
+  </header>
+
+  <p class="section-label">Today's mission</p>
+  <div class="card" id="rec-card">
+    <div class="loading"><i class="ti ti-loader"></i> Loading recommendation…</div>
+  </div>
+
+  <p class="section-label">Predicted sleep score</p>
+  <div class="card" id="score-card">
+    <div class="loading">Awaiting recommendation…</div>
+  </div>
+
+  <p class="section-label">Log today's outcome</p>
+  <div class="card">
+    <div class="form-grid">
+      <div class="fg"><label>Steps</label><input type="number" id="l-steps" placeholder="9000"></div>
+      <div class="fg">
+        <label>Activity</label>
+        <select id="l-activity">
+          <option value="">— select —</option>
+          <option value="Strength">Strength</option>
+          <option value="Cardio">Cardio</option>
+          <option value="Yoga">Yoga</option>
+          <option value="Stretching">Stretching</option>
+          <option value="OtherActivity">Other</option>
+          <option value="NoActivity">No activity</option>
+        </select>
+      </div>
+      <div class="fg"><label>Bed hour</label><input type="number" id="l-bed-h" min="0" max="23" placeholder="22"></div>
+      <div class="fg"><label>Bed min</label><input type="number" id="l-bed-m" min="0" max="59" placeholder="30"></div>
+      <div class="fg"><label>Wake hour</label><input type="number" id="l-wake-h" min="0" max="23" placeholder="7"></div>
+      <div class="fg"><label>Wake min</label><input type="number" id="l-wake-m" min="0" max="59" placeholder="0"></div>
+    </div>
+    <label class="checkbox-row">
+      <input type="checkbox" id="l-followed"> Followed the recommendation
+    </label>
+    <div class="fg" style="margin-top:0.75rem; max-width:280px;">
+      <label>Notes</label>
+      <input type="text" id="l-notes" placeholder="Felt tired, late dinner…">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="log-btn"><i class="ti ti-check"></i> Log outcome</button>
+      <span class="form-msg" id="form-msg"></span>
+    </div>
+  </div>
+
+  <p class="section-label">30-day trend</p>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+  </div>
+
+</div>
+<script>
+const pad = n => String(n).padStart(2, '0');
+const fmt = n => (n != null ? n.toFixed(1) : '—');
+
+document.getElementById('today-date').textContent =
+  new Date().toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+
+const ICON = { Strength:'ti-barbell', Cardio:'ti-run', Yoga:'ti-yoga',
+               Stretching:'ti-stretching', OtherActivity:'ti-activity', NoActivity:'ti-moon' };
+
+async function checkHealth() {
+  try {
+    const d = await fetch('/health').then(r => r.json());
+    const dot = document.getElementById('status-dot');
+    dot.className = 'status-dot ' + (d.status === 'ok' ? 'ok' : 'error');
+    dot.title = d.message;
+  } catch { document.getElementById('status-dot').className = 'status-dot error'; }
+}
+
+function renderRec(d) {
+  const r = d.recommendation;
+  const bed  = `${pad(r.bed_hour % 24)}:${pad(r.bed_minute)}`;
+  const wake = `${pad(r.wake_hour)}:${pad(r.wake_minute)}`;
+  const icon = ICON[r.activity_type] || 'ti-activity';
+  const policyLabel = d.policy_source === 'trained_policy' ? 'PPO policy' : 'fallback';
+
+  document.getElementById('rec-card').innerHTML = `
+    <div class="rec-meta">
+      <span class="rec-meta-text">${d.state_days_used} days of Garmin data</span>
+      <span class="badge"><i class="ti ti-brain" style="font-size:12px" aria-hidden="true"></i>${policyLabel}</span>
+    </div>
+    <div class="rec-grid">
+      <div class="rec-item">
+        <div class="rec-label"><i class="ti ti-shoe-walk" aria-hidden="true"></i>Steps</div>
+        <div class="rec-value">${r.target_steps.toLocaleString()}</div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-label"><i class="ti ${icon}" aria-hidden="true"></i>Activity</div>
+        <div class="rec-value sm">${r.activity_type}</div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-label"><i class="ti ti-moon" aria-hidden="true"></i>Bed</div>
+        <div class="rec-value">${bed}</div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-label"><i class="ti ti-sun" aria-hidden="true"></i>Wake</div>
+        <div class="rec-value">${wake}</div>
+      </div>
+    </div>`;
+
+  const s = d.predicted_scores;
+  const sign = s.delta >= 0 ? '+' : '';
+  document.getElementById('score-card').innerHTML = `
+    <div class="score-grid">
+      <div class="score-item">
+        <div class="score-label">Follow recommendation</div>
+        <div class="score-num rec">${fmt(s.recommended)}</div>
+      </div>
+      <div class="score-delta">
+        <div class="delta-label">Δ</div>
+        <div class="delta-num">${sign}${fmt(s.delta)}</div>
+      </div>
+      <div class="score-item">
+        <div class="score-label">Repeat yesterday</div>
+        <div class="score-num base">${fmt(s.baseline)}</div>
+      </div>
+    </div>
+    <p class="score-footnote">7-day policy rollout · scale 0–100</p>`;
+
+  document.getElementById('l-steps').value   = r.target_steps;
+  document.getElementById('l-activity').value = r.activity_type;
+  document.getElementById('l-bed-h').value   = r.bed_hour % 24;
+  document.getElementById('l-bed-m').value   = r.bed_minute;
+  document.getElementById('l-wake-h').value  = r.wake_hour;
+  document.getElementById('l-wake-m').value  = r.wake_minute;
+}
+
+async function loadRec(refresh = false) {
+  const icon = document.getElementById('refresh-icon');
+  icon.classList.add('spinning');
+  try {
+    const r = await fetch(`/recommend${refresh ? '?refresh=true' : ''}`);
+    if (!r.ok) throw new Error((await r.json()).detail);
+    renderRec(await r.json());
+  } catch(e) {
+    document.getElementById('rec-card').innerHTML =
+      `<span style="color:var(--red);font-size:13px;"><i class="ti ti-alert-circle"></i> ${e.message}</span>`;
+  } finally { icon.classList.remove('spinning'); }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', () => loadRec(true));
+
+document.getElementById('log-btn').addEventListener('click', async () => {
+  const today = new Date().toISOString().split('T')[0];
+  const msg = document.getElementById('form-msg');
+  const body = {
+    date: today,
+    actual_steps:       parseInt(document.getElementById('l-steps').value)  || null,
+    actual_activity:    document.getElementById('l-activity').value          || null,
+    actual_bed_hour:    parseInt(document.getElementById('l-bed-h').value)   || null,
+    actual_bed_minute:  parseInt(document.getElementById('l-bed-m').value)   ?? null,
+    actual_wake_hour:   parseInt(document.getElementById('l-wake-h').value)  || null,
+    actual_wake_minute: parseInt(document.getElementById('l-wake-m').value)  ?? null,
+    followed_recommendation: document.getElementById('l-followed').checked,
+    notes: document.getElementById('l-notes').value || null,
+  };
+  try {
+    const r = await fetch('/log-outcome', { method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json()).detail);
+    msg.textContent = '✓ Logged'; msg.style.color = 'var(--green)'; msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 3000);
+    loadChart();
+  } catch(e) {
+    msg.textContent = 'Error: ' + e.message; msg.style.color = 'var(--red)'; msg.style.display = 'inline';
+  }
+});
+
+let chartInst = null;
+async function loadChart() {
+  try {
+    const rows = (await fetch('/history?days=30').then(r => r.json())).reverse();
+    const labels    = rows.map(r => r.date.slice(5));
+    const predicted = rows.map(r => r.predicted_score ?? null);
+    const actual    = rows.map(r => r.actual_score    ?? null);
+    const ctx = document.getElementById('trend-chart').getContext('2d');
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets: [
+        { label:'Predicted', data:predicted, borderColor:'#2dd4bf',
+          backgroundColor:'rgba(45,212,191,0.07)', borderWidth:1.5,
+          pointRadius:3, pointBackgroundColor:'#2dd4bf', fill:true, tension:0.35, spanGaps:false },
+        { label:'Actual', data:actual, type:'scatter', showLine:false,
+          backgroundColor:'#d29922', pointRadius:5, pointHoverRadius:7,
+          borderColor:'transparent' }
+      ]},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins: {
+          legend: { labels:{ color:'#7d8590', font:{family:"'IBM Plex Mono'",size:11}, boxWidth:12, padding:16 }},
+          tooltip: { backgroundColor:'#161b22', borderColor:'#30363d', borderWidth:1,
+            titleColor:'#e6edf3', bodyColor:'#7d8590',
+            titleFont:{family:"'IBM Plex Mono'"}, bodyFont:{family:"'IBM Plex Mono'",size:12} }
+        },
+        scales: {
+          x: { grid:{color:'rgba(48,54,61,0.5)'}, ticks:{color:'#7d8590',font:{family:"'IBM Plex Mono'",size:11},maxTicksLimit:10} },
+          y: { min:0, max:100, grid:{color:'rgba(48,54,61,0.5)'}, ticks:{color:'#7d8590',font:{family:"'IBM Plex Mono'",size:11},stepSize:20} }
+        }
+      }
+    });
+  } catch { }
+}
+
+checkHealth();
+loadRec();
+loadChart();
+</script>
+</body>
+</html>

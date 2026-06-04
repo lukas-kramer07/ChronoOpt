@@ -26,17 +26,18 @@ flowchart TD
     end
 
     subgraph serving ["Daily Inference"]
-        H[FastAPI] -->|loads policy + LSTM| I[GET /recommend]
+        H[FastAPI] -->|loads policy + EDMD + LSTM| I[GET /recommend]
         I -->|real 10-day Garmin state| J[Recommendation\nsteps, activity, bed, wake]
-        J -->|5-day policy rollout| K[LSTM scorer\npredicted sleep score]
+        J -->|5-day policy rollout| K[EDMD scorer\nLSTM fallback if no EDMD]
         J --> L[POST /log-outcome]
         L --> M[(SQLite\nrecommendations, outcomes)]
-        M -->|actual vs predicted| N[Online Personalisation\nnightly PPO update]
+        M -->|actual sleep score| N[Nightly loop\nPPO update + EDMD refit ×7d]
         N --> G
+        N -->|refit| K
     end
 ```
 
-**Inference flow:** the trained policy maps the last 10 days of real Garmin state to today's recommended action. The LSTM then scores both the recommendation and the baseline (repeat yesterday) by running identical 5-day rollouts through the environment, returning the average predicted sleep score for each.
+**Inference flow:** the trained policy maps the last 10 days of real Garmin state to today's recommended action. Both the recommendation and the baseline (repeat yesterday) are scored via identical 5-day rollouts — using EDMD as the dynamics model when available, falling back to the LSTM otherwise.
 
 ---
 
@@ -62,14 +63,15 @@ uvicorn src.api.main:app --reload
 # http://localhost:8000/docs   (interactive API)
 ```
 
-
 ---
 
 ## How it works
 
-### 1. Prediction model (LSTM)
+### 1. Dynamics models
 
-An LSTM trained on personal Garmin data predicts the next day's 12 physiological features (heart rate, sleep architecture, stress, body battery) from a 10-day history window of 23 features per day. Trained offline; serves as the environment's world model during RL training and as a scoring oracle at inference time.
+An LSTM trained on personal Garmin data predicts the next day's 12 physiological features from a 10-day history window. Used as the world model during offline RL training.
+
+EDMD (Extended Dynamic Mode Decomposition) is fit on real Garmin data by the online loop and serves as the primary scoring model at inference time. It takes a single scaled 23-feature day vector as input rather than a sequence, making it faster and more transparent than the LSTM. The LSTM is used as a fallback when no EDMD model is loaded.
 
 ### 2. RL agent (PPO)
 
@@ -79,11 +81,11 @@ A two-headed policy network maps the scaled observation (10 x 23 = 230 inputs) t
 
 ### 3. Scoring
 
-At inference time, both the recommendation and the baseline (repeat yesterday) are scored using identical 5-day rollouts through the LSTM environment. The policy re-observes and re-acts at each step of the recommendation rollout. The delta between the two scores is the headline metric shown in the dashboard.
+At inference time, both the recommendation and the baseline are scored using identical 5-day rollouts. The recommendation rollout lets the policy re-observe and re-act at each step. EDMD is the preferred dynamics model for scoring; the LSTM is used as a fallback. The delta is the headline metric in the dashboard.
 
 ### 4. Online personalisation (in progress)
 
-Each logged outcome provides a real (state, action, reward) tuple. A nightly background task runs a PPO update on this data, fine-tuning the policy toward the individual user's physiology. The offline training is the prior; daily logging is the personalisation signal.
+Each logged outcome provides a real (state, action, reward) tuple. A nightly APScheduler job at 3 AM runs a single online PPO update using the actual sleep score as reward, and refits the EDMD model on all available real data every 7 days. The offline training is the prior; daily logging is the personalisation signal.
 
 ---
 
@@ -127,10 +129,10 @@ ChronoOpt/
 
 23 features per day, split into two groups:
 
-| Group | Indices | Features |
-|---|---|---|
-| Agent-controlled | 0-10 | total_steps, activity flags x6, bed_hour, bed_minute, wake_hour, wake_minute |
-| Model-predicted | 11-22 | avg_hr, resting_hr, respiration, stress, body_battery, total/deep/REM/awake sleep, restlessness, sleep_stress, sleep_rhr |
+| Group            | Indices | Features                                                                                                                 |
+| ---------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Agent-controlled | 0-10    | total_steps, activity flags x6, bed_hour, bed_minute, wake_hour, wake_minute                                             |
+| Model-predicted  | 11-22   | avg_hr, resting_hr, respiration, stress, body_battery, total/deep/REM/awake sleep, restlessness, sleep_stress, sleep_rhr |
 
 ---
 
@@ -138,25 +140,26 @@ ChronoOpt/
 
 Interactive docs at `http://localhost:8000/docs`.
 
-| Endpoint | Description |
-|---|---|
-| `GET /health` | model load status, system check |
-| `GET /recommend` | today's recommendation + predicted scores |
-| `GET /recommend?refresh=true` | force re-run inference |
-| `POST /log-outcome` | log actual daily behaviour |
-| `GET /history?days=30` | recommendation vs outcome history |
+| Endpoint                      | Description                               |
+| ----------------------------- | ----------------------------------------- |
+| `GET /health`                 | model load status, system check           |
+| `GET /recommend`              | today's recommendation + predicted scores |
+| `GET /recommend?refresh=true` | force re-run inference                    |
+| `POST /log-outcome`           | log actual daily behaviour                |
+| `GET /history?days=30`        | recommendation vs outcome history         |
 
 ---
 
 ## Stack
 
-| Layer | Technology |
-|---|---|
-| Data ingestion | `garminconnect` (unofficial API) |
-| ML | PyTorch 2.x, LSTM + PPO |
-| API | FastAPI, Pydantic, SQLite |
-| Frontend | Vanilla JS, Chart.js |
-| Training | CUDA |
+| Layer          | Technology                               |
+| -------------- | ---------------------------------------- |
+| Data ingestion | `garminconnect` (unofficial API)         |
+| ML             | PyTorch 2.x, LSTM + PPO                  |
+| Dynamics model | EDMD (polynomial features, scikit-learn) |
+| API            | FastAPI, Pydantic, SQLite                |
+| Frontend       | Vanilla JS, Chart.js                     |
+| Training       | CUDA                                     |
 
 ---
 

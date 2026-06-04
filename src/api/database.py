@@ -82,11 +82,11 @@ def upsert_recommendation(rec: dict) -> None:
             INSERT OR REPLACE INTO recommendations
                 (date, target_steps, activity_type, bed_hour, bed_minute,
                  wake_hour, wake_minute, predicted_score, baseline_score,
-                 score_delta, policy_source)
+                 score_delta, score_days ,score_model, policy_source)
             VALUES
                 (:date, :target_steps, :activity_type, :bed_hour, :bed_minute,
                  :wake_hour, :wake_minute, :predicted_score, :baseline_score,
-                 :score_delta, :policy_source)
+                 :score_delta, :score_days,:score_model,:policy_source)
         """, {
             "date":            rec["date"],
             "target_steps":    rec["recommendation"]["target_steps"],

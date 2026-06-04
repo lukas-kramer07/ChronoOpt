@@ -91,6 +91,8 @@ def update_policy(
     policy,
     device: torch.device,
     state: np.ndarray,
+    actual_cont: np.ndarray,
+    actual_act_idx: int,
     reward: float,
     lr: float = 1e-5,
 ) -> dict:
@@ -104,11 +106,13 @@ def update_policy(
     overwriting the offline-trained prior too aggressively.
 
     Args:
-        policy:  PolicyNetwork instance (will be mutated).
-        device:  Torch device.
-        state:   Scaled real observation, shape (seq_len, 23).
-        reward:  Actual sleep score reward from Garmin data.
-        lr:      Online learning rate.
+        policy:          PolicyNetwork instance (will be mutated).
+        device:          Torch device.
+        state:           Scaled real observation, shape (seq_len, 23).
+        actual_cont:     Normalized actual continuous actions.
+        actual_act_idx:  Categorical index of actual activity.
+        reward:          Actual sleep score reward from Garmin data.
+        lr:              Online learning rate.
 
     Returns:
         dict: {'policy_loss', 'value_loss', 'advantage', 'value_estimate'}
@@ -121,15 +125,15 @@ def update_policy(
     continuous_out, activity_probs, value = policy.forward(x)
     value = value.squeeze()
 
-    # Sample action under current policy to get log_prob
+    # Evaluate log_prob of the actual executed action instead of sampling
     std = torch.full_like(continuous_out, 0.5)
     dist_cont = torch.distributions.Normal(continuous_out, std)
-    cont_sample = dist_cont.sample()
-    log_prob_cont = dist_cont.log_prob(cont_sample).sum(dim=-1)
+    actual_cont_tensor = torch.tensor(actual_cont, dtype=torch.float32).unsqueeze(0).to(device)
+    log_prob_cont = dist_cont.log_prob(actual_cont_tensor).sum(dim=-1)
 
     dist_act = torch.distributions.Categorical(probs=activity_probs)
-    act_idx = dist_act.sample()
-    log_prob_act = dist_act.log_prob(act_idx)
+    actual_act_tensor = torch.tensor([actual_act_idx], dtype=torch.long).to(device)
+    log_prob_act = dist_act.log_prob(actual_act_tensor)
 
     log_prob = log_prob_cont + log_prob_act
 
@@ -275,7 +279,7 @@ async def run_nightly_loop(app_state) -> dict:
             'actual_wake_minute': None,
             'followed_recommendation': None,
             'notes': 'auto-filled from Garmin',
-})
+        })
 
         # --- 3. Build state from the NUM_DAYS_FOR_STATE days before yesterday ---
         # i.e., the observation the policy would have seen before yesterday's recommendation
@@ -284,11 +288,34 @@ async def run_nightly_loop(app_state) -> dict:
         if state is None:
             raise RuntimeError("Could not build valid state from real data.")
 
-        # --- 4. Online policy update ---
+        # --- 4. Extract and scale yesterday's actual action via DataProcessor ---
+        yesterday_unscaled = models.processor.flatten_features_for_day(processed[-1])
+        
+        # Scale the complete 23-feature vector using the fitted training scalers
+        yesterday_scaled = models.processor.transform_X(
+            yesterday_unscaled.reshape(1, 1, 23)
+        )[0, 0]
+
+        # Extract continuous actions in policy output order:
+        # Index 0: steps, 7: bed_hour, 8: bed_minute, 9: wake_hour, 10: wake_minute
+        actual_cont = np.array([
+            yesterday_scaled[0],
+            yesterday_scaled[7],
+            yesterday_scaled[8],
+            yesterday_scaled[9],
+            yesterday_scaled[10]
+        ], dtype=np.float32)
+
+        # Categorical activity index remains unscaled argmax over one-hot columns (indices 1 to 6)
+        actual_act_idx = int(np.argmax(yesterday_unscaled[1:7]))
+
+        # --- 5. Online policy update ---
         update_info = update_policy(
             policy=models.policy,
             device=models.device,
             state=state,
+            actual_cont=actual_cont,
+            actual_act_idx=actual_act_idx,
             reward=reward,
             lr=config.ONLINE_LEARNING_RATE,
         )
@@ -298,7 +325,7 @@ async def run_nightly_loop(app_state) -> dict:
             f"value_est={update_info['value_estimate']:.2f}"
         )
 
-        # --- 5. EDMD refit (every EDMD_REFIT_INTERVAL days) --- // Currently turned off
+        # --- 6. EDMD refit (every EDMD_REFIT_INTERVAL days) --- // Currently turned off
         day_of_year = today.timetuple().tm_yday
         if day_of_year % EDMD_REFIT_INTERVAL == 0 and False:
             logger.info("EDMD refit day — fetching full history...")
@@ -313,7 +340,7 @@ async def run_nightly_loop(app_state) -> dict:
             days_until = EDMD_REFIT_INTERVAL - (day_of_year % EDMD_REFIT_INTERVAL)
             logger.info(f"EDMD refit in {days_until} days.")
 
-        # --- 6. Save policy ---
+        # --- 7. Save policy ---
         models.policy.save(config.POLICY_SAVE_PATH)
         logger.info("Policy weights saved.")
 

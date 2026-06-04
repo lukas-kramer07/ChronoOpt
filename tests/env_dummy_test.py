@@ -1,4 +1,4 @@
-# dumm_test.py
+# tests/env_dumm_test.py
 # Verifies that ChronoOptEnv initialises correctly and step() runs end to end.
 
 import numpy as np

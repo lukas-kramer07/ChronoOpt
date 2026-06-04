@@ -18,6 +18,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from datetime import date, timedelta, datetime
 from typing import Optional
+from src.api import database
 
 from src import config
 from src.data_ingestion.garmin_parser import get_historical_metrics
@@ -246,7 +247,7 @@ async def run_nightly_loop(app_state) -> dict:
     try:
         # --- 1. Fetch real data ---
         # Need seq_len days for state + 1 more for yesterday's reward
-        n_fetch = config.NUM_DAYS_FOR_STATE + 2
+        n_fetch = config.NUM_DAYS_FOR_STATE + 3
         logger.info(f"Nightly loop: fetching {n_fetch} days up to {yesterday}...")
 
         raw_data = get_historical_metrics(n_fetch, end_date=yesterday)
@@ -262,6 +263,19 @@ async def run_nightly_loop(app_state) -> dict:
         reward = compute_real_reward(raw_data[-1])
         result['reward'] = reward
         logger.info(f"Yesterday's actual sleep reward: {reward:.2f}")
+
+        database.upsert_outcome({
+            'date':         yesterday.isoformat(),
+            'actual_score': round(reward, 2),  # store 0-100, not sharpened reward
+            'actual_steps': None,
+            'actual_activity': None,
+            'actual_bed_hour': None,
+            'actual_bed_minute': None,
+            'actual_wake_hour': None,
+            'actual_wake_minute': None,
+            'followed_recommendation': None,
+            'notes': 'auto-filled from Garmin',
+})
 
         # --- 3. Build state from the NUM_DAYS_FOR_STATE days before yesterday ---
         # i.e., the observation the policy would have seen before yesterday's recommendation

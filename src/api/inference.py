@@ -19,6 +19,7 @@ from src import config
 from src.models.prediction_model import PredictionModel
 from src.models.data_processor import DataProcessor
 from src.rl_agent.policy_network import PolicyNetwork
+from src.rl_agent.edmd_environment import EDMDEnv
 from src.rl_agent.rl_environment import ChronoOptEnv
 from src.data_ingestion.garmin_parser import get_historical_metrics
 from src.features.feature_engineer import extract_daily_features
@@ -128,9 +129,13 @@ def _scale_state(state_array: np.ndarray, models: ModelBundle) -> np.ndarray:
  
  
 def _score_policy_rollout(state_array, scaled_obs, models, n_steps=7) -> float:
-    """Policy rollout — policy re-observes and re-acts at each step."""
-    env = ChronoOptEnv(initial_state_data=state_array, model=models.lstm,
-                       processor=models.processor, device=models.device)
+    env = EDMDEnv(
+        initial_state_data=state_array,
+        model=models.lstm,
+        processor=models.processor,
+        device=models.device,
+        edmd_model=models.edmd,
+    )
     env.history = state_array.tolist()
     obs = scaled_obs.copy()
     rewards = []
@@ -141,11 +146,15 @@ def _score_policy_rollout(state_array, scaled_obs, models, n_steps=7) -> float:
     return round(float(np.mean(rewards)), 2)
 
 def _score_fixed_action(state_array, action, models, n_steps=3) -> float:
-    """Baseline — repeat yesterday's action for a short horizon."""
-    env = ChronoOptEnv(initial_state_data=state_array, model=models.lstm,
-                       processor=models.processor, device=models.device)
+    env = EDMDEnv(
+        initial_state_data=state_array,
+        model=models.lstm,
+        processor=models.processor,
+        device=models.device,
+        edmd_model=models.edmd,
+    )
     env.history = state_array.tolist()
-    env.step(action)  # warmup — discard
+    env.step(action)
     rewards = []
     for _ in range(n_steps):
         _, reward, _, _, _ = env.step(action)
@@ -178,7 +187,7 @@ def get_recommendation(models: ModelBundle) -> dict:
         )
     else:
         recommended_action = np.array(
-            [900000, 1, 0, 0, 0, 0, 0, 22, 30, 7, 0], dtype=np.float32
+            [10000, 0, 1, 0, 0, 0, 0, 22, 30, 7, 30], dtype=np.float32
         )
  
     # 3. Predicted sleep scores: recommended vs baseline (repeat yesterday)

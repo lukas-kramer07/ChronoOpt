@@ -27,6 +27,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.api.online_loop import register_nightly_job
 from src.api.online_loop import run_nightly_loop
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
@@ -144,7 +151,7 @@ def log_outcome(outcome: OutcomeLog):
     """
     Log what you actually did today.
 
-    All fields are optional — log what you know. If you provide an actual
+    All fields are optional, log what you know. If you provide an actual
     sleep score, the system records the calibration error (predicted vs actual)
     in the model log, which feeds the online personalisation loop over time.
     """

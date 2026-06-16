@@ -12,6 +12,7 @@ from src.models.prediction_model import PredictionModel
 from src.models.data_processor import DataProcessor
 # from src.features.feature_engineer import extract_daily_features, create_state_vectors
 from src.features.utils import calculate_sleep_score_proxy
+from src import config
 
 class ChronoOptEnv:
     """
@@ -105,47 +106,46 @@ class ChronoOptEnv:
                 observation (np.ndarray): Initial state history. Shape: (sequence_length, 23).
                 info (Dict[str, Any]): Additional info.
         """
-        # Copy to avoid mutating the original reference
-        perturbed = self.initial_state_data.copy()
-        num_days = perturbed.shape[0]
+        total_days_available = self.initial_state_data.shape[0]
+        seq_len = config.NUM_DAYS_FOR_STATE
 
-        # Define scale for the 11 agent-controlled features only
-        # Indices: 0=steps, 1-6=activity, 7-10=time
+        if total_days_available <= seq_len:
+            start_idx = 0
+        else:
+            # Wähle einen zufälligen Startpunkt
+            start_idx = np.random.randint(0, total_days_available - seq_len)
+            
+        # Schneide exakt 10 Tage heraus
+        base_window = self.initial_state_data[start_idx : start_idx + seq_len].copy()
+
+        # Rauschen definieren (wie bisher)
         noise_scale = np.array([
-            2000,               # total_steps
-            0, 0, 0, 0, 0, 0,   # activity flags (no perturbation)
-            1, 30, 1, 30        # bed_h, bed_m, wake_h, wake_m
+            2000, 0, 0, 0, 0, 0, 0, 1, 30, 1, 30
         ], dtype=np.float32)
 
-        # 1. Generate noise for the specific (days, agent_features) shape
-        # shape will be (10, 11)
-        noise = np.random.randn(num_days, 11) * noise_scale
-        
-        # 2. Apply noise only to the first 11 columns
-        perturbed[:, :11] += noise
+        noise = np.random.randn(seq_len, 11) * noise_scale
+        base_window[:, :11] += noise
 
-        # 3. Ensure logical bounds (e.g., hours stay in 0-23, minutes 0-59)
-        # Note: These are unscaled, so we handle them before the processor
-        perturbed[:, 0] = np.clip(perturbed[:, 0], 0, 20000)      # steps
-        perturbed[:, 7] = np.clip(perturbed[:, 7], 0, 23)         # bed_h
-        perturbed[:, 8] = np.clip(perturbed[:, 8], 0, 59)         # bed_m
-        perturbed[:, 9] = np.clip(perturbed[:, 9], 0, 23)         # wake_h
-        perturbed[:, 10] = np.clip(perturbed[:, 10], 0, 59)       # wake_m
+        # Logische Grenzen einhalten
+        base_window[:, 0] = np.clip(base_window[:, 0], 0, 20000)      # steps
+        base_window[:, 7] = np.clip(base_window[:, 7], 0, 23)         # bed_h
+        base_window[:, 8] = np.clip(base_window[:, 8], 0, 59)         # bed_m
+        base_window[:, 9] = np.clip(base_window[:, 9], 0, 23)         # wake_h
+        base_window[:, 10] = np.clip(base_window[:, 10], 0, 59)       # wake_m
 
-        self.history = perturbed.tolist()
+        self.history = base_window.tolist()
         self.current_step = 0
 
         state_array = np.array(self.history, dtype=np.float32)
         
         if self.processor._is_scaler_fitted:
-            # Reshape for processor: (1, seq_len, features)
             observation = self.processor.transform_X(
-                state_array.reshape(1, num_days, self.num_total_features)
+                state_array.reshape(1, seq_len, self.num_total_features)
             )[0]
         else:
             observation = state_array
 
-        return observation, {"message": "Environment reset with targeted noise."}
+        return observation, {"message": f"Environment reset to random window starting at index {start_idx}."}
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """

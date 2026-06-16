@@ -60,9 +60,8 @@ def build_initial_state(processed_features: list, processor: DataProcessor) -> n
     Returns:
         np.ndarray: Shape (NUM_DAYS_FOR_STATE, 23), unscaled.
     """
-    last_n = processed_features[-config.NUM_DAYS_FOR_STATE:]
     state = np.array(
-        [processor.flatten_features_for_day(d) for d in last_n],
+        [processor.flatten_features_for_day(d) for d in processed_features],
         dtype=np.float32
     )
     return state
